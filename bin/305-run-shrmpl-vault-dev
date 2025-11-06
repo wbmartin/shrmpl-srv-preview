@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+echo "Building shrmpl-vault-srv for development (macOS)..."
+
+cargo build --bin shrmpl-vault-srv
+
+echo "Launching shrmpl-vault-srv with config ~/Code/simple-server/etc/shrmpl-vault-srv-loc.env..."
+
+./target/debug/shrmpl-vault-srv ~/Code/simple-server/etc/shrmpl-vault-srv-loc.env

@@ -1,0 +1,6 @@
+#!/bin/bash
+set -e
+echo "Building shrmpl-kv-srv..."
+cargo build --bin shrmpl-kv-srv --release
+echo "Running shrmpl-kv-srv with config etc/shrmpl-kv-srv-loc.env..."
+./target/release/shrmpl-kv-srv etc/shrmpl-kv-srv-loc.env

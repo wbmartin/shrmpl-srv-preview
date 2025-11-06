@@ -1,0 +1,12 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "simple_example_dev"
+  },
+  "api": {
+    "timeout": 30,
+    "retries": 3
+  },
+  "debug": true
+}

@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -e
+
+echo "Building Shrmpl-KV for release..."
+
+# Get project directory (parent of bin)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Create dist directories
+mkdir -p "$PROJECT_DIR/dist/mac"
+mkdir -p "$PROJECT_DIR/dist/linux"
+
+# Build for Mac (Apple Silicon)
+echo "Building for macOS (aarch64-apple-darwin)..."
+cd "$PROJECT_DIR"
+cargo build --release --target aarch64-apple-darwin --bins
+cp target/aarch64-apple-darwin/release/shrmpl-kv-srv "$PROJECT_DIR/dist/mac/"
+cp target/aarch64-apple-darwin/release/shrmpl-kv-cli "$PROJECT_DIR/dist/mac/"
+
+# Build for Linux (x86_64)
+echo "Building for Linux (x86_64-unknown-linux-gnu)..."
+cd "$PROJECT_DIR"
+if command -v zig >/dev/null 2>&1; then
+    echo "Using zig for cross-compilation..."
+    export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="$SCRIPT_DIR/zig-cc.sh"
+    cargo build --release --target x86_64-unknown-linux-gnu --bins
+    cp target/x86_64-unknown-linux-gnu/release/shrmpl-kv-srv "$PROJECT_DIR/dist/linux/"
+    cp target/x86_64-unknown-linux-gnu/release/shrmpl-kv-cli "$PROJECT_DIR/dist/linux/"
+else
+    echo "Zig not found. Install with 'brew install zig' for cross-compilation, or run on Linux."
+fi
+
+echo "Build complete. Binaries in dist/mac and dist/linux"

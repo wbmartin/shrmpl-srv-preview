@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+
+import socket
+import time
+
+def send_log(lvl, host, code, msg, server_host='localhost', server_port=7379):
+    # Validate inputs
+    if len(lvl) != 4:
+        raise ValueError("LVL must be exactly 4 characters")
+    if len(code) != 4:
+        raise ValueError("CODE must be exactly 4 characters")
+    if len(msg.encode('utf-8')) > 4096:
+        raise ValueError("Message too long (max 4096 bytes)")
+
+    # Format host: pad/truncate to 32 bytes
+    host_bytes = host.encode('utf-8')
+    if len(host_bytes) > 32:
+        host_bytes = host_bytes[:32]
+    else:
+        host_bytes += b' ' * (32 - len(host_bytes))
+
+    # Calculate LEN
+    msg_bytes = msg.encode('utf-8')
+    len_str = f"{len(msg_bytes):04d}"
+
+    # Build the line
+    line = f"{lvl} {host_bytes.decode('utf-8', errors='ignore')} {code} {len_str}: {msg}\n"
+    line_bytes = line.encode('utf-8')
+
+    # Send over TCP
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((server_host, server_port))
+            sock.sendall(line_bytes)
+            time.sleep(0.1)  # Allow time for receiver to read
+        print(f"Sent {lvl} message: {line.strip()}")
+    except Exception as e:
+        print(f"Failed to send {lvl} message: {e}")
+
+if __name__ == "__main__":
+    # Send ERRO message
+    send_log('ERRO', 'test-host.example.com', 'T001', 'This is an error message for testing.')
+
+    # Send INFO message
+    send_log('INFO', 'test-host.example.com', 'T002', 'This is an info message for testing.')

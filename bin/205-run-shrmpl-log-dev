@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+echo "Building shrmpl-log-srv for development (macOS)..."
+
+cargo build --bin shrmpl-log-srv
+
+echo "Launching shrmpl-log-srv with config ~/Code/simple-server/etc/shrmpl-log-srv-loc.env..."
+
+./target/debug/shrmpl-log-srv ~/Code/simple-server/etc/shrmpl-log-srv-loc.env

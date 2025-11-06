@@ -1,0 +1,45 @@
+[package]
+name = "shrmpl"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+socket2 = "0.5"
+crossbeam-channel = "0.5"
+chrono = { version = "0.4", features = ["serde"] }
+hyper = { version = "0.14", features = ["full"] }
+rustls = { version = "0.21", features = ["dangerous_configuration"] }
+tokio-rustls = "0.24"
+x509-parser = "0.15"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+async-stream = "0.3"
+futures = "0.3"
+hyper-rustls = "0.24"
+rustls-pemfile = "1.0"
+
+[[bin]]
+name = "shrmpl-kv-srv"
+path = "src/shrmpl_kv_srv.rs"
+
+[[bin]]
+name = "shrmpl-kv-cli"
+path = "src/shrmpl_kv_cli.rs"
+
+[[bin]]
+name = "shrmpl-log-srv"
+path = "src/shrmpl_log_srv.rs"
+
+[[bin]]
+name = "shrmpl-vault-srv"
+path = "src/shrmpl_vault_srv.rs"
+
+[[bin]]
+name = "shrmpl-vault-cli"
+path = "src/shrmpl_vault_cli.rs"

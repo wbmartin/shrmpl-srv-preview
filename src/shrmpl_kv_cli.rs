@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             match client.list().await {
                                 Ok(items) => {
                                     if items.is_empty() {
-                                        println("(no keys)");
+                                        println!("(no keys)");
                                     } else {
                                         for (key, value, expiration) in items {
                                             match expiration {

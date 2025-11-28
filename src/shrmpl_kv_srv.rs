@@ -4,7 +4,7 @@ use socket2::{Socket, TcpKeepalive};
 use std::collections::HashMap;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, RwLock};
@@ -19,7 +19,7 @@ enum Value {
 #[derive(Clone, Debug)]
 struct StoredValue {
     value: Value,
-    expires_at: Option<Instant>,
+    expires_at: Option<SystemTime>,
 }
 
 type KvStore = Arc<RwLock<HashMap<String, StoredValue>>>;
@@ -123,7 +123,7 @@ async fn main() {
             tokio::select! {
                 _ = cleanup_interval.tick() => {
                     let mut store_write = store_for_cleanup.write().await;
-                    let now = Instant::now();
+                    let now = SystemTime::now();
                     store_write.retain(|_, stored_value| {
                         match stored_value.expires_at {
                             Some(exp_time) => exp_time > now,
@@ -244,7 +244,7 @@ async fn process_command(
             match store_write.get(key) {
                 Some(stored) => {
                     if let Some(exp_time) = stored.expires_at {
-                        if exp_time <= Instant::now() {
+                        if exp_time <= SystemTime::now() {
                             store_write.remove(key);
                             "ERROR key not found\n".to_string()
                         } else {
@@ -276,7 +276,7 @@ async fn process_command(
             let expires_at = if parts.len() == 4 {
                 let exp_str = parts[3];
                 if let Some(duration) = parse_expiration(exp_str) {
-                    Some(Instant::now() + duration)
+                    Some(SystemTime::now() + duration)
                 } else {
                     return "ERROR invalid expiration\n".to_string();
                 }
@@ -307,7 +307,7 @@ async fn process_command(
             let expires_at = if parts.len() == 3 {
                 let exp_str = parts[2];
                 if let Some(duration) = parse_expiration(exp_str) {
-                    Some(Instant::now() + duration)
+                    Some(SystemTime::now() + duration)
                 } else {
                     return "ERROR invalid expiration\n".to_string();
                 }
@@ -320,7 +320,7 @@ async fn process_command(
             let new_val = match current {
                 Some(stored) => {
                     if let Some(exp_time) = stored.expires_at {
-                        if exp_time <= Instant::now() {
+                        if exp_time <= SystemTime::now() {
                             1 // Expired, treat as new
                         } else {
                             match &stored.value {
@@ -357,7 +357,7 @@ async fn process_command(
             match store_write.get(key) {
                 Some(stored) => {
                     if let Some(exp_time) = stored.expires_at {
-                        if exp_time <= Instant::now() {
+                        if exp_time <= SystemTime::now() {
                             store_write.remove(key);
                             "ERROR key not found\n".to_string()
                         } else {
@@ -386,7 +386,7 @@ async fn process_command(
                 let expiration_str = match stored_value.expires_at {
                     Some(exp_time) => {
                         let timestamp = exp_time.duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
+                            .unwrap()
                             .as_secs();
                         timestamp.to_string()
                     }

@@ -8,4 +8,4 @@ cargo build --bin shrmpl-log-srv
 
 echo "Launching shrmpl-log-srv with config ~/Code/simple-server/etc/shrmpl-log-srv-loc.env..."
 
-./target/debug/shrmpl-log-srv ~/Code/simple-server/etc/shrmpl-log-srv-loc.env
+./target/debug/shrmpl-log-srv ~/Code/shrmpl-srv-preview/etc/shrmpl-log-srv-loc.env

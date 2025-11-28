@@ -1,5 +1,7 @@
 I want to continue with the shrmpl concept and build a vault.  the intend is to replace a typical cloud key-vault concept that would hold secrets, could be accessed securely over the internet, but would also be able to hold configuration files.  (logically there is no difference to me, they need to be secure too).  I want the rust server to offer an https service with mutual tls.  the client will need to present a client certificate to ask the server for the config.  the config files will be kept in a single directory and be simple text files (contents could be a paragraph, json, yaml, doesn't matter).  the files will be named following the convention "[environment]-[appname]-[friendlyname]-[guid]", e.g. "dev_simple-example_app-server-config-json_08ff3053-b7ba-4f8a-a0d5-b4107c3fc319"
 
+This idea file is the jumpstart for the tech spec.
+
 When starting the server, I want to pass one argument - the configuration file that should have these variables, suggest more if you need them
 ```
 BIND_ADDR=0.0.0.0:7474

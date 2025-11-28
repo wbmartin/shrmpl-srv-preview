@@ -4,10 +4,11 @@ use socket2::{Socket, TcpKeepalive};
 use std::collections::HashMap;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, RwLock};
-use tokio::time::{interval, Duration};
+use tokio::time::{interval, Duration as TokioDuration};
 
 #[derive(Clone, Debug)]
 enum Value {
@@ -15,7 +16,28 @@ enum Value {
     Str(String),
 }
 
-type KvStore = Arc<RwLock<HashMap<String, Value>>>;
+#[derive(Clone, Debug)]
+struct StoredValue {
+    value: Value,
+    expires_at: Option<Instant>,
+}
+
+type KvStore = Arc<RwLock<HashMap<String, StoredValue>>>;
+
+fn parse_expiration(exp_str: &str) -> Option<Duration> {
+    if exp_str.ends_with("s") {
+        let num_str = exp_str.trim_end_matches('s');
+        num_str.parse::<u64>().ok().map(Duration::from_secs)
+    } else if exp_str.ends_with("min") {
+        let num_str = exp_str.trim_end_matches("min");
+        num_str.parse::<u64>().ok().map(|secs| Duration::from_secs(secs * 60))
+    } else if exp_str.ends_with("h") {
+        let num_str = exp_str.trim_end_matches('h');
+        num_str.parse::<u64>().ok().map(|hours| Duration::from_secs(hours * 3600))
+    } else {
+        None
+    }
+}
 
 // Server application uses fail-fast approach with expect()/unwrap() for startup errors
 // since server processes should fail immediately on configuration or socket setup issues
@@ -90,6 +112,31 @@ async fn main() {
 
     let store: KvStore = Arc::new(RwLock::new(HashMap::new()));
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
+
+    // Spawn cleanup task for expired keys
+    let store_for_cleanup = store.clone();
+    let cleanup_shutdown_rx = shutdown_tx.subscribe();
+    tokio::spawn(async move {
+        let mut cleanup_interval = interval(TokioDuration::from_secs(60));
+        let mut shutdown_rx = cleanup_shutdown_rx;
+        loop {
+            tokio::select! {
+                _ = cleanup_interval.tick() => {
+                    let mut store_write = store_for_cleanup.write().await;
+                    let now = Instant::now();
+                    store_write.retain(|_, stored_value| {
+                        match stored_value.expires_at {
+                            Some(exp_time) => exp_time > now,
+                            None => true,
+                        }
+                    });
+                }
+                _ = shutdown_rx.recv() => {
+                    break;
+                }
+            }
+        }
+    });
 
     // Spawn shutdown handler
     let shutdown_tx_clone = shutdown_tx.clone();
@@ -193,15 +240,31 @@ async fn process_command(
             if key.len() > 100 {
                 return "ERROR invalid length\n".to_string();
             }
-            let store_read = store.read().await;
-            match store_read.get(key) {
-                Some(Value::Int(i)) => format!("{}\n", i),
-                Some(Value::Str(s)) => format!("{}\n", s),
+            let mut store_write = store.write().await;
+            match store_write.get(key) {
+                Some(stored) => {
+                    if let Some(exp_time) = stored.expires_at {
+                        if exp_time <= Instant::now() {
+                            store_write.remove(key);
+                            "ERROR key not found\n".to_string()
+                        } else {
+                            match &stored.value {
+                                Value::Int(i) => format!("{}\n", i),
+                                Value::Str(s) => format!("{}\n", s),
+                            }
+                        }
+                    } else {
+                        match &stored.value {
+                            Value::Int(i) => format!("{}\n", i),
+                            Value::Str(s) => format!("{}\n", s),
+                        }
+                    }
+                }
                 None => "ERROR key not found\n".to_string(),
             }
         }
         "SET" => {
-            if parts.len() != 3 {
+            if parts.len() < 3 || parts.len() > 4 {
                 return "ERROR invalid arguments\n".to_string();
             }
             let key = parts[1];
@@ -209,30 +272,77 @@ async fn process_command(
             if key.len() > 100 || value_str.len() > 100 {
                 return "ERROR invalid length\n".to_string();
             }
+            
+            let expires_at = if parts.len() == 4 {
+                let exp_str = parts[3];
+                if let Some(duration) = parse_expiration(exp_str) {
+                    Some(Instant::now() + duration)
+                } else {
+                    return "ERROR invalid expiration\n".to_string();
+                }
+            } else {
+                None
+            };
+            
             let value = if let Ok(i) = value_str.parse::<i64>() {
                 Value::Int(i)
             } else {
                 Value::Str(value_str.to_string())
             };
+            
+            let stored_value = StoredValue { value, expires_at };
             let mut store_write = store.write().await;
-            store_write.insert(key.to_string(), value);
+            store_write.insert(key.to_string(), stored_value);
             "OK\n".to_string()
         }
         "INCR" => {
-            if parts.len() != 2 {
+            if parts.len() < 2 || parts.len() > 3 {
                 return "ERROR invalid arguments\n".to_string();
             }
             let key = parts[1];
             if key.len() > 100 {
                 return "ERROR invalid length\n".to_string();
             }
-            let mut store_write = store.write().await;
-            let current = store_write.get(key).cloned().unwrap_or(Value::Int(0));
-            let new_val = match current {
-                Value::Int(i) => i + 1,
-                Value::Str(_) => 1, // Treat as 0, increment to 1
+            
+            let expires_at = if parts.len() == 3 {
+                let exp_str = parts[2];
+                if let Some(duration) = parse_expiration(exp_str) {
+                    Some(Instant::now() + duration)
+                } else {
+                    return "ERROR invalid expiration\n".to_string();
+                }
+            } else {
+                None
             };
-            store_write.insert(key.to_string(), Value::Int(new_val));
+            
+            let mut store_write = store.write().await;
+            let current = store_write.get(key);
+            let new_val = match current {
+                Some(stored) => {
+                    if let Some(exp_time) = stored.expires_at {
+                        if exp_time <= Instant::now() {
+                            1 // Expired, treat as new
+                        } else {
+                            match &stored.value {
+                                Value::Int(i) => i + 1,
+                                Value::Str(_) => 1, // Treat as 0, increment to 1
+                            }
+                        }
+                    } else {
+                        match &stored.value {
+                            Value::Int(i) => i + 1,
+                            Value::Str(_) => 1, // Treat as 0, increment to 1
+                        }
+                    }
+                }
+                None => 1, // New key
+            };
+            
+            let stored_value = StoredValue {
+                value: Value::Int(new_val),
+                expires_at,
+            };
+            store_write.insert(key.to_string(), stored_value);
             format!("{}\n", new_val)
         }
         "DEL" => {
@@ -244,10 +354,50 @@ async fn process_command(
                 return "ERROR invalid length\n".to_string();
             }
             let mut store_write = store.write().await;
-            if store_write.remove(key).is_some() {
-                "OK\n".to_string()
+            match store_write.get(key) {
+                Some(stored) => {
+                    if let Some(exp_time) = stored.expires_at {
+                        if exp_time <= Instant::now() {
+                            store_write.remove(key);
+                            "ERROR key not found\n".to_string()
+                        } else {
+                            store_write.remove(key);
+                            "OK\n".to_string()
+                        }
+                    } else {
+                        store_write.remove(key);
+                        "OK\n".to_string()
+                    }
+                }
+                None => "ERROR key not found\n".to_string(),
+            }
+        }
+        "LIST" => {
+            if parts.len() != 1 {
+                return "ERROR invalid arguments\n".to_string();
+            }
+            let store_read = store.read().await;
+            let mut result = String::new();
+            for (key, stored_value) in store_read.iter() {
+                let value_str = match &stored_value.value {
+                    Value::Int(i) => i.to_string(),
+                    Value::Str(s) => s.clone(),
+                };
+                let expiration_str = match stored_value.expires_at {
+                    Some(exp_time) => {
+                        let timestamp = exp_time.duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        timestamp.to_string()
+                    }
+                    None => "no-expiration".to_string(),
+                };
+                result.push_str(&format!("{}={},{}\n", key, value_str, expiration_str));
+            }
+            if result.is_empty() {
+                "\n".to_string()
             } else {
-                "ERROR key not found\n".to_string()
+                result
             }
         }
         _ => "ERROR unknown command\n".to_string(),

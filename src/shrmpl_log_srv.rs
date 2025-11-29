@@ -125,9 +125,11 @@ async fn handle_connection(
                                 }
                             }
                             Err(ParseError::Invalid) => {
+                                println!("Protocol error: invalid log message format");
                                 counters.protocol_errors.fetch_add(1, Ordering::Relaxed);
                             }
                             Err(ParseError::Oversize) => {
+                                println!("Protocol error: log message too large (>4096 bytes)");
                                 counters.oversize.fetch_add(1, Ordering::Relaxed);
                             }
                         }

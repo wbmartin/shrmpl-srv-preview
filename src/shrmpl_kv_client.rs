@@ -170,13 +170,13 @@ impl KvClient {
                     continue;
                 }
                 
-                let parts: Vec<&str> = line.splitn(3, '=').collect();
-                if parts.len() != 3 {
+                let parts: Vec<&str> = line.splitn(2, '=').collect();
+                if parts.len() != 2 {
                     continue;
                 }
-                
+
                 let key = parts[0].to_string();
-                let value_and_expiration: Vec<&str> = parts[2].split(',').collect();
+                let value_and_expiration: Vec<&str> = parts[1].split(',').collect();
                 if value_and_expiration.len() != 2 {
                     continue;
                 }

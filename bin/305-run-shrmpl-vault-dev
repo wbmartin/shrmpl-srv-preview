@@ -2,7 +2,7 @@
 
 set -e
 
-CONFIG_FILE=etc/shrmpl-vault-srv-loc.env
+CONFIG_FILE=/Users/brandon/Code/shrmpl-srv-preview/etc/shrmpl-vault-srv-loc.env
 
 echo "Building shrmpl-vault-srv for development (macOS)..."
 

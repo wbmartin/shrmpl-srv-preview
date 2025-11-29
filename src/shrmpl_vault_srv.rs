@@ -200,10 +200,10 @@ fn check_certificate_expiration(cert_path: &str) -> Result<(), Box<dyn std::erro
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs() as i64;
-            
+
             let not_after = cert.validity().not_after.timestamp();
             let days_until_expiry = (not_after - now) / 86400;
-            
+
             if days_until_expiry < 0 {
                 error!("Certificate has expired!");
             } else if days_until_expiry < 30 {
@@ -211,11 +211,15 @@ fn check_certificate_expiration(cert_path: &str) -> Result<(), Box<dyn std::erro
             } else {
                 info!("Certificate expires in {} days", days_until_expiry);
             }
-            
+
             Ok(())
         }
         Err(e) => {
             error!("Failed to parse certificate: {}", e);
+            if !certs.is_empty() {
+                let first_bytes = &certs[0][..std::cmp::min(20, certs[0].len())];
+                error!("First 20 bytes of certificate DER: {:?}", first_bytes);
+            }
             Err(Box::new(e))
         }
     }

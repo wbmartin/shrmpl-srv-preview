@@ -1,6 +1,6 @@
 # Shrmpl-KV Summary
 
-This project will replace a redis server and be backwards compatible with redis commands. It will offer a limited number of functions, target smaller implementations (e.g. 3 clients).
+This project will replace a redis server and be backwards compatible with redis commands. It will offer a limited number of functions, target smaller implementations (e.g. 3 clients). This is a collection of rough notes and thoughts to jump start the technical spec.
 
 
 # Desired Outcome

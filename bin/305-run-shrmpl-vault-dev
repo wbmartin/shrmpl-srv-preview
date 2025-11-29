@@ -2,11 +2,12 @@
 
 set -e
 
+CONFIG_FILE=etc/shrmpl-vault-srv-loc.env
+
 echo "Building shrmpl-vault-srv for development (macOS)..."
 
 cargo build --bin shrmpl-vault-srv
 
-echo "Launching shrmpl-vault-srv with config /Users/brandon/Code/shrmpl-srv-preview/etc/shrmpl-vault-srv-loc.env..."
+echo "Launching shrmpl-vault-srv with config $CONFIG_FILE..."
 
-#./target/debug/shrmpl-vault-srv /Users/brandon/Code/shrmpl-srv-preview/etc/shrmpl-vault-srv-loc.env
-#./target/debug/shrmpl-vault-srv /Users/brandon/Code/ProtoStack-ReactGo/etc/shrmpl-vault-srv-loc.env
+./target/debug/shrmpl-vault-srv $CONFIG_FILE

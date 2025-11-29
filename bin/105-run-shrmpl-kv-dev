@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
+CONFIG_FILE=etc/shrmpl-kv-srv-loc.env
 echo "Building shrmpl-kv-srv..."
 cargo build --bin shrmpl-kv-srv --release
-echo "Running shrmpl-kv-srv with config etc/shrmpl-kv-srv-loc.env..."
-./target/release/shrmpl-kv-srv etc/shrmpl-kv-srv-loc.env
+echo "Running shrmpl-kv-srv with config $CONFIG_FILE..."
+./target/release/shrmpl-kv-srv $CONFIG_FILE

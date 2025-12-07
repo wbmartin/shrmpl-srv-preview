@@ -214,23 +214,17 @@ async fn handle_connection(
     }
 }
 
-async fn process_command(
-    line: &str,
+async fn process_single_command(
+    parts: Vec<&str>,
     store: &KvStore,
-    logger: &shrmpl_log_client::Logger,
 ) -> String {
-    let parts: Vec<&str> = line.split_whitespace().collect();
     if parts.is_empty() {
         return "ERROR unknown command\n".to_string();
     }
 
-    let cmd = parts[0].to_string();
+    let cmd = parts[0];
 
-    logger
-        .debug("AABC", &format!("Processing command: {}", line))
-        .await;
-
-    match cmd.as_str() {
+    match cmd {
         "PING" => "PONG\n".to_string(),
         "GET" => {
             if parts.len() != 2 {
@@ -272,7 +266,7 @@ async fn process_command(
             if key.len() > 100 || value_str.len() > 100 {
                 return "ERROR invalid length\n".to_string();
             }
-            
+
             let expires_at = if parts.len() == 4 {
                 let exp_str = parts[3];
                 if let Some(duration) = parse_expiration(exp_str) {
@@ -283,13 +277,13 @@ async fn process_command(
             } else {
                 None
             };
-            
+
             let value = if let Ok(i) = value_str.parse::<i64>() {
                 Value::Int(i)
             } else {
                 Value::Str(value_str.to_string())
             };
-            
+
             let stored_value = StoredValue { value, expires_at };
             let mut store_write = store.write().await;
             store_write.insert(key.to_string(), stored_value);
@@ -303,7 +297,7 @@ async fn process_command(
             if key.len() > 100 {
                 return "ERROR invalid length\n".to_string();
             }
-            
+
             let expires_at = if parts.len() == 3 {
                 let exp_str = parts[2];
                 if let Some(duration) = parse_expiration(exp_str) {
@@ -314,7 +308,7 @@ async fn process_command(
             } else {
                 None
             };
-            
+
             let mut store_write = store.write().await;
             let current = store_write.get(key);
             let new_val = match current {
@@ -337,7 +331,7 @@ async fn process_command(
                 }
                 None => 1, // New key
             };
-            
+
             let stored_value = StoredValue {
                 value: Value::Int(new_val),
                 expires_at,
@@ -402,4 +396,36 @@ async fn process_command(
         }
         _ => "ERROR unknown command\n".to_string(),
     }
+}
+
+async fn process_command(
+    line: &str,
+    store: &KvStore,
+    logger: &shrmpl_log_client::Logger,
+) -> String {
+    let result = if line.starts_with("BATCH ") {
+        let batch_commands = &line[6..]; // Skip "BATCH "
+        let commands: Vec<&str> = batch_commands.split(';').collect();
+        if commands.len() > 3 {
+            "ERROR too many commands\n".to_string()
+        } else {
+            let mut results = Vec::new();
+            for cmd in commands {
+                let trimmed = cmd.trim();
+                if !trimmed.is_empty() {
+                    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                    let result = process_single_command(parts, store).await;
+                    let clean_result = result.trim_end();
+                    results.push(clean_result.to_string());
+                }
+            }
+            results.join("\n") + "\n"
+        }
+    } else {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        process_single_command(parts, store).await
+    };
+
+    logger.debug("AABC", &format!("Processing command: {} = {}", line.trim(), result.trim())).await;
+    result
 }

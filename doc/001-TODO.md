@@ -1,0 +1,1 @@
+consider sqllite for shrmpl-log, still dump the text to console, but handling the larger text block might be more natural. could use sqlite to query right there on the server which might be helpful when troubleshooting.

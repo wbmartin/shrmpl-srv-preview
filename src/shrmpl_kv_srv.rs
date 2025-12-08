@@ -254,7 +254,7 @@ async fn process_single_command(
                         }
                     }
                 }
-                None => "ERROR key not found\n".to_string(),
+                 None => "*KEY NOT FOUND*\n".to_string(),
             }
         }
         "SET" => {
@@ -363,7 +363,7 @@ async fn process_single_command(
                         "OK\n".to_string()
                     }
                 }
-                None => "ERROR key not found\n".to_string(),
+                 None => "*KEY NOT FOUND*\n".to_string(),
             }
         }
         "LIST" => {
@@ -419,7 +419,7 @@ async fn process_command(
                     results.push(clean_result.to_string());
                 }
             }
-            results.join("\n") + "\n"
+            results.join(";") + "\n"
         }
     } else {
         let parts: Vec<&str> = line.split_whitespace().collect();

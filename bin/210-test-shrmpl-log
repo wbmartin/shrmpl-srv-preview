@@ -7,8 +7,8 @@ def send_log(lvl, host, code, msg, server_host='localhost', server_port=7379):
     # Validate inputs
     if len(lvl) != 4:
         raise ValueError("LVL must be exactly 4 characters")
-    if len(code) != 4:
-        raise ValueError("CODE must be exactly 4 characters")
+    if len(code) != 12:
+        raise ValueError("CODE must be exactly 12 characters")
     if len(msg.encode('utf-8')) > 4096:
         raise ValueError("Message too long (max 4096 bytes)")
 
@@ -21,7 +21,7 @@ def send_log(lvl, host, code, msg, server_host='localhost', server_port=7379):
 
     # Calculate LEN
     msg_bytes = msg.encode('utf-8')
-    len_str = f"{len(msg_bytes):04d}"
+    len_str = f"{len(msg_bytes):05d}"
 
     # Build the line
     line = f"{lvl} {host_bytes.decode('utf-8', errors='ignore')} {code} {len_str}: {msg}\n"
@@ -39,7 +39,7 @@ def send_log(lvl, host, code, msg, server_host='localhost', server_port=7379):
 
 if __name__ == "__main__":
     # Send ERRO message
-    send_log('ERRO', 'test-host.example.com', 'T001', 'This is an error message for testing.')
+    send_log('ERRO', 'test-host.example.com', 'TESTERROR   ', 'This is an error message for testing.')
 
     # Send INFO message
-    send_log('INFO', 'test-host.example.com', 'T002', 'This is an info message for testing.')
+    send_log('INFO', 'test-host.example.com', 'TESTINFO    ', 'This is an info message for testing.')

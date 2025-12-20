@@ -1,0 +1,25 @@
+#!/bin/bash
+
+set -e
+
+echo "Building all binaries for macOS..."
+
+# Get project directory (parent of bin)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Create dist directories
+mkdir -p "$PROJECT_DIR/dist/mac"
+
+# Build all binaries for macOS
+echo "Building all binaries for macOS (current arch)..."
+cargo build --release --bins
+
+# Copy binaries to dist/mac
+cp "$PROJECT_DIR/target/release/shrmpl-kv-srv" "$PROJECT_DIR/dist/mac/"
+cp "$PROJECT_DIR/target/release/shrmpl-kv-cli" "$PROJECT_DIR/dist/mac/"
+cp "$PROJECT_DIR/target/release/shrmpl-log-srv" "$PROJECT_DIR/dist/mac/"
+cp "$PROJECT_DIR/target/release/shrmpl-vault-srv" "$PROJECT_DIR/dist/mac/"
+cp "$PROJECT_DIR/target/release/shrmpl-vault-cli" "$PROJECT_DIR/dist/mac/"
+
+echo "macOS build complete. Binaries in dist/mac"

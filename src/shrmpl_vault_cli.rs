@@ -1,3 +1,5 @@
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use std::fs;
 use std::sync::Arc;
 use std::io::BufReader;
@@ -11,6 +13,7 @@ use shrmpl::config::load_config;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("shrmpl-vault-cli version {}", VERSION);
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
         eprintln!("Usage: {} <config_file>", args[0]);

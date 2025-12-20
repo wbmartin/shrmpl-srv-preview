@@ -1,3 +1,5 @@
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use crate::shrmpl_log_client::Logger;
 use shrmpl::{config, shrmpl_log_client};
 use socket2::{Socket, TcpKeepalive};
@@ -44,6 +46,7 @@ fn parse_expiration(exp_str: &str) -> Option<Duration> {
 // and be restarted by process managers rather than attempting graceful recovery
 #[tokio::main]
 async fn main() {
+    println!("shrmpl-kv-srv version {}", VERSION);
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
         eprintln!("Usage: {} <config_file>", args[0]);
@@ -82,7 +85,7 @@ async fn main() {
     let addr_parts: Vec<&str> = bind_addr.split(':').collect();
     if addr_parts.len() != 2 {
         logger
-            .error("AAEA", "Invalid BIND_ADDR format")
+            .error("KVINVALIDBND", "Invalid BIND_ADDR format")
             .await;
         std::process::exit(1);
     }
@@ -107,7 +110,7 @@ async fn main() {
     let std_listener: StdTcpListener = socket.into();
     let listener = TcpListener::from_std(std_listener).expect("Failed to convert listener");
     logger
-        .info("AAAA", &format!("Server listening on {}", addr))
+        .info("KVSERVERLIST", &format!("shrmpl-kv-srv version {} listening on {}", VERSION, addr))
         .await;
 
     let store: KvStore = Arc::new(RwLock::new(HashMap::new()));
@@ -159,7 +162,7 @@ async fn main() {
                 });
             }
             _ = shutdown_rx.recv() => {
-                logger.info("AAAA", "Shutting down server...").await;
+                logger.info("KVSERVERDOWN", "Shutting down server...").await;
                 break;
             }
         }
@@ -196,7 +199,7 @@ async fn handle_connection(
                     Ok(_) => {
                         let trimmed = line.trim_end();
                         if !trimmed.is_empty() {
-                             logger.debug("AABA", &format!("Received command: {}", trimmed)).await;
+                              logger.debug("KVCMDRECV", &format!("Received command: {}", trimmed)).await;
                             let response = process_command(trimmed, &store, &logger).await;
                             if writer.write_all(response.as_bytes()).await.is_err() {
                                 return;
@@ -426,6 +429,6 @@ async fn process_command(
         process_single_command(parts, store).await
     };
 
-    logger.debug("AABC", &format!("Processing command: {} = {}", line.trim(), result.trim())).await;
+    logger.debug("KVCMDPROC", &format!("Processing command: {} = {}", line.trim(), result.trim())).await;
     result
 }

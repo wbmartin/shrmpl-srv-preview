@@ -98,11 +98,11 @@ impl Logger {
     // Network logging uses proper error propagation to allow graceful degradation
     // when SLOG server is unavailable - errors are logged locally but don't crash
     async fn send_log(&self, level: &str, code: &str, message: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // Format per SLOG protocol: [LVL(4)] [HOST(32)] [CODE(4)] [LEN(4)]: [MSG]\n
+        // Format per SLOG protocol: [LVL(4)] [HOST(32)] [CODE(12)] [LEN(5)]: [MSG]\n
         let lvl = format!("{:<4}", &level[..level.len().min(4)]);
         let host_padded = format!("{:<32}", &self.host[..self.host.len().min(32)]);
-        let code_padded = format!("{:<4}", &code[..code.len().min(4)]);
-        let len_str = format!("{:04}", message.len());
+        let code_padded = format!("{:<12}", &code[..code.len().min(12)]);
+        let len_str = format!("{:05}", message.len());
         let line = format!("{} {} {} {}: {}\n", lvl, host_padded, code_padded, len_str, message);
         
         let stream = timeout(Duration::from_secs(5), TcpStream::connect(&self.dest)).await??;

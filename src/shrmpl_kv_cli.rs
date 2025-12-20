@@ -1,3 +1,5 @@
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use tokio::io::{AsyncBufReadExt, BufReader};
 use shrmpl::shrmpl_kv_client::KvClient;
 
@@ -5,6 +7,7 @@ use shrmpl::shrmpl_kv_client::KvClient;
 // and allow for graceful error handling (e.g., connection timeouts, network errors)
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("shrmpl-kv-cli version {}", VERSION);
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 3 {
         eprintln!("Usage: {} <ip> <port>", args[0]);

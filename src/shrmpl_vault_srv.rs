@@ -1,3 +1,5 @@
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufReader;
@@ -64,7 +66,7 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
     if method != &Method::GET {
         let msg = format!("{} {} - Method not allowed: {}", client_ip, method, uri);
         warn!("{}", msg);
-        state.logger.warn("HTTP", &msg).await;
+        state.logger.warn("HTTPERROR", &msg).await;
         return Ok(Response::builder()
             .status(StatusCode::METHOD_NOT_ALLOWED)
             .body(Body::from("Method not allowed"))
@@ -80,7 +82,7 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
         None => {
             let msg = format!("{} {} - Missing secret key", client_ip, uri);
             warn!("{}", msg);
-            state.logger.warn("AUTH", &msg).await;
+            state.logger.warn("AUTHFAIL", &msg).await;
             return Ok(Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Body::from("Missing secret key"))
@@ -103,7 +105,7 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
     if !state.rate_limiter.check_rate_limit(secret_key) {
         let msg = format!("{} {} - Rate limit exceeded for secret: {}", client_ip, uri, secret_key);
         warn!("{}", msg);
-        state.logger.warn("RATE", &msg).await;
+        state.logger.warn("RATELIMIT", &msg).await;
         return Ok(Response::builder()
             .status(StatusCode::TOO_MANY_REQUESTS)
             .header("Retry-After", "60")
@@ -119,7 +121,7 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
         None => {
             let msg = format!("{} {} - Invalid path format", client_ip, uri);
             warn!("{}", msg);
-            state.logger.warn("HTTP", &msg).await;
+            state.logger.warn("HTTPERROR", &msg).await;
             return Ok(Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body(Body::from("Invalid path"))
@@ -135,7 +137,7 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
         Ok(content) => {
             let msg = format!("{} {} - Successfully retrieved file: {}", client_ip, uri, filename);
             info!("{}", msg);
-            state.logger.activity("VAULT", &msg).await;
+            state.logger.activity("VAULTACCESS", &msg).await;
             Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "text/plain")
@@ -146,7 +148,7 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
         Err(_) => {
             let msg = format!("{} {} - File not found: {}", client_ip, uri, filename);
             warn!("{}", msg);
-            state.logger.warn("FILE", &msg).await;
+            state.logger.warn("FILENOTFND", &msg).await;
             Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .body(Body::from("File not found"))
@@ -227,6 +229,7 @@ fn check_certificate_expiration(cert_path: &str) -> Result<(), Box<dyn std::erro
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("shrmpl-vault-srv version {}", VERSION);
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
         eprintln!("Usage: {} <config_file>", args[0]);
@@ -309,11 +312,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Log certificate check
-    state.logger.info("CERT", "Checking certificate expiration...").await;
+    state.logger.info("CERTCHECK", "Checking certificate expiration...").await;
     if let Err(e) = check_certificate_expiration(cert_fullchain_path) {
         let msg = format!("Failed to check certificate expiration: {}", e);
         error!("{}", msg);
-        state.logger.error("CERT", &msg).await;
+        state.logger.error("CERTCHECK", &msg).await;
     }
 
     // Load TLS certificates
@@ -334,9 +337,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create TCP listener
     let listener = TcpListener::bind(&addr).await?;
-    let start_msg = format!("shrmpl-vault server listening on {}", addr);
+    let start_msg = format!("shrmpl-vault-srv version {} listening on {}", VERSION, addr);
     info!("{}", start_msg);
-    state.logger.info("SRVU", &start_msg).await;
+    state.logger.info("VAULTLISTEN", &start_msg).await;
 
     // Clone state for logging after server creation
     let state_for_logging = state.clone();

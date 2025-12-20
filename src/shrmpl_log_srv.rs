@@ -1,3 +1,5 @@
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,7 +17,7 @@ use tokio::time::{interval, Duration};
 struct Record {
     lvl: [u8; 4],
     host: [u8; 32],
-    code: [u8; 4],
+    code: [u8; 12],
     len: u16,
     msg: Vec<u8>,
     recv_ts: [u8; 24],
@@ -38,8 +40,6 @@ struct Counters {
     protocol_errors: AtomicU64,
 }
 
-
-
 fn get_queue(lvl: &[u8; 4]) -> usize {
     if lvl == b"ACTV" {
         0
@@ -58,13 +58,13 @@ enum ParseError {
 // Protocol parsing uses custom error types for precise error categorization
 // (Invalid vs Oversize) to enable different handling strategies in calling code
 fn parse_line(line: &[u8]) -> Result<Record, ParseError> {
-    if line.len() < 50 || line.last() != Some(&b'\n') {
+    if line.len() < 60 || line.last() != Some(&b'\n') {
         return Err(ParseError::Invalid);
     }
     let lvl: [u8; 4] = line[0..4].try_into().map_err(|_| ParseError::Invalid)?;
     let host: [u8; 32] = line[5..37].try_into().map_err(|_| ParseError::Invalid)?;
-    let code: [u8; 4] = line[38..42].try_into().map_err(|_| ParseError::Invalid)?;
-    let len_str = std::str::from_utf8(&line[43..47]).map_err(|_| ParseError::Invalid)?;
+    let code: [u8; 12] = line[38..50].try_into().map_err(|_| ParseError::Invalid)?;
+    let len_str = std::str::from_utf8(&line[51..56]).map_err(|_| ParseError::Invalid)?;
     let len: u16 = len_str.parse().map_err(|_| ParseError::Invalid)?;
     if len > 4096 {
         return Err(ParseError::Oversize);
@@ -252,6 +252,7 @@ async fn signal_handler(counters: Arc<Counters>) {
 // and errors indicate serious system issues that should cause immediate failure
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("shrmpl-log-srv version {}", VERSION);
     let config_path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "etc/slog.env".to_string());
@@ -295,7 +296,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let listener = tokio::net::TcpListener::bind(&config.bind_addr).await?;
-    println!("Listening on {}", config.bind_addr);
+    println!(
+        "shrmpl-log server version {} Listening on {}",
+        VERSION, config.bind_addr
+    );
 
     let start_time = Utc::now();
 
@@ -332,14 +336,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
             let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
             let host = format!("{:32}", "server.local");
-            let _code = "STAT";
-            let _len = format!("{:04}", stats_msg.len());
+            let _code = "LOGSTATS";
+            let _len = format!("{:05}", stats_msg.len());
 
             println!("Stats: {}", stats_msg);
             let record = Record {
                 lvl: *b"INFO",
                 host: host.as_bytes().try_into().unwrap(),
-                code: *b"STAT",
+                code: *b"LOGSTATS    ",
                 len: stats_msg.len() as u16,
                 msg: stats_msg.into_bytes(),
                 recv_ts: timestamp.as_bytes().try_into().unwrap_or([0; 24]),

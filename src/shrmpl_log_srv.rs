@@ -58,7 +58,7 @@ enum ParseError {
 // Protocol parsing uses custom error types for precise error categorization
 // (Invalid vs Oversize) to enable different handling strategies in calling code
 fn parse_line(line: &[u8]) -> Result<Record, ParseError> {
-    if line.len() < 60 || line.last() != Some(&b'\n') {
+    if line.len() < 59 || line.last() != Some(&b'\n') {
         return Err(ParseError::Invalid);
     }
     let lvl: [u8; 4] = line[0..4].try_into().map_err(|_| ParseError::Invalid)?;
@@ -69,10 +69,10 @@ fn parse_line(line: &[u8]) -> Result<Record, ParseError> {
     if len > 4096 {
         return Err(ParseError::Oversize);
     }
-    if line.len() != 49 + len as usize + 1 {
+    if line.len() != 58 + len as usize + 1 {
         return Err(ParseError::Invalid);
     }
-    let msg = line[49..49 + len as usize].to_vec();
+    let msg = line[58..58 + len as usize].to_vec();
     let recv_ts = Utc::now()
         .format("%Y-%m-%dT%H:%M:%S%.3fZ")
         .to_string()

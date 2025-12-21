@@ -155,43 +155,53 @@ impl KvClient {
     }
 
     pub async fn list(&mut self) -> Result<Vec<(String, String, Option<u64>)>, Box<dyn std::error::Error>> {
-        let response = self.send_command("LIST").await?;
-        
-        if response.starts_with("ERROR") {
-            Err(response.into())
-        } else {
-            let mut result = Vec::new();
-            if response.trim().is_empty() {
-                return Ok(result);
-            }
-            
-            for line in response.lines() {
-                if line.trim().is_empty() {
-                    continue;
-                }
-                
-                let parts: Vec<&str> = line.splitn(2, '=').collect();
-                if parts.len() != 2 {
-                    continue;
-                }
-
-                let key = parts[0].to_string();
-                let value_and_expiration: Vec<&str> = parts[1].split(',').collect();
-                if value_and_expiration.len() != 2 {
-                    continue;
-                }
-                
-                let value = value_and_expiration[0].to_string();
-                let expiration = if value_and_expiration[1] == "no-expiration" {
-                    None
-                } else {
-                    value_and_expiration[1].parse::<u64>().ok()
-                };
-                
-                result.push((key, value, expiration));
-            }
-            
-            Ok(result)
+        // Send LIST command
+        if self.writer.write_all(b"LIST\n").await.is_err() {
+            return Err("Failed to send command".into());
         }
+
+        let mut result = Vec::new();
+        let mut response = String::new();
+
+        // Read all lines until empty line or error
+        loop {
+            response.clear();
+            match self.reader.read_line(&mut response).await {
+                Ok(0) => return Err("Connection closed by server".into()),
+                Ok(_) => {
+                    let resp = response.trim().to_string();
+                    // Ignore UPONG heartbeats
+                    if resp == "UPONG" {
+                        continue;
+                    } else if resp == "TERM" {
+                        return Err("Server shutting down".into());
+                    } else if resp.starts_with("ERROR") {
+                        return Err(resp.into());
+                    } else if resp.is_empty() {
+                        // Empty line indicates end of LIST response
+                        break;
+                    } else {
+                        // Parse the line
+                        let parts: Vec<&str> = resp.splitn(2, '=').collect();
+                        if parts.len() == 2 {
+                            let key = parts[0].to_string();
+                            let value_and_expiration: Vec<&str> = parts[1].split(',').collect();
+                            if value_and_expiration.len() == 2 {
+                                let value = value_and_expiration[0].to_string();
+                                let expiration = if value_and_expiration[1] == "no-expiration" {
+                                    None
+                                } else {
+                                    value_and_expiration[1].parse::<u64>().ok()
+                                };
+                                result.push((key, value, expiration));
+                            }
+                        }
+                    }
+                }
+                Err(_) => return Err("Error reading from server".into()),
+            }
+        }
+
+        Ok(result)
     }
 }

@@ -301,17 +301,6 @@ async fn process_single_command(
                 return "ERROR invalid length\n".to_string();
             }
 
-            let expires_at = if parts.len() == 3 {
-                let exp_str = parts[2];
-                if let Some(duration) = parse_expiration(exp_str) {
-                    Some(SystemTime::now() + duration)
-                } else {
-                    return "ERROR invalid expiration\n".to_string();
-                }
-            } else {
-                None
-            };
-
             let mut store_write = store.write().await;
             let current = store_write.get(key);
             let new_val = match current {
@@ -333,6 +322,19 @@ async fn process_single_command(
                     }
                 }
                 None => 1, // New key
+            };
+
+            // Only set expiration if the key is new (None case)
+            let expires_at = if parts.len() == 3 && current.is_none() {
+                let exp_str = parts[2];
+                if let Some(duration) = parse_expiration(exp_str) {
+                    Some(SystemTime::now() + duration)
+                } else {
+                    return "ERROR invalid expiration\n".to_string();
+                }
+            } else {
+                // Keep existing expiration or none
+                current.and_then(|stored| stored.expires_at)
             };
 
             let stored_value = StoredValue {

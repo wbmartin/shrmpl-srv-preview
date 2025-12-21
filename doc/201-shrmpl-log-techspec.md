@@ -35,7 +35,7 @@
 
 Each incoming line has a fixed-width header with spaces, a variable message, and a trailing newline:
 
-[LVL(4)] [HOST(32)] [CODE(4)] [LEN(4)]: [MSG(LEN bytes)]\n
+[LVL(4)] [HOST(32)] [CODE(12)] [LEN(5)]: [MSG(LEN bytes)]\n
 
 | Field | Width | Description |
 |:------|------:|:------------|
@@ -43,19 +43,19 @@ Each incoming line has a fixed-width header with spaces, a variable message, and
 | Space | 1 | Separator. |
 | `HOST` | 32 | Hostname or device ID. Any ASCII; right-padded or truncated to 32 bytes. |
 | Space | 1 | Separator. |
-| `CODE` | 4 | Application-defined 4-byte log code (e.g., `G500`, `ABCD`, or `----`). |
+| `CODE` | 12 | Application-defined 12-byte log code (e.g., `G500        `, `ABCD        `, or `------------`). |
 | Space | 1 | Separator. |
-| `LEN` | 4 | ASCII decimal, zero-padded (`0000`–`4096`). Message length in bytes. |
+| `LEN` | 5 | ASCII decimal, zero-padded (`00000`–`4096`). Message length in bytes. |
 | `:` | 1 | Literal colon for readability. |
 | Space | 1 | Single space before message text. |
 | `MSG` | variable (≤4096) | Raw message bytes (client escapes newlines as `\n` if needed). |
 | `\n` | 1 | Line terminator. |
 
-**Total header length:** 4 + 1 + 32 + 1 + 4 + 1 + 4 + 1 + 1 = 49 bytes before the message.
+**Total header length:** 4 + 1 + 32 + 1 + 12 + 1 + 5 + 1 + 1 = 58 bytes before the message.
 
 **Validation rules**
-- Total line length must not exceed `LEN` + header length (49 + LEN bytes).
-- Total length ≥ header + 1 + LF.
+- Total line length must not exceed `LEN` + header length (58 + LEN bytes).
+- Total length ≥ header + 1 + LF (59 bytes minimum).
 - `LVL` = 4 ASCII bytes.
 - `LEN` must parse 0–4096; lines with invalid or oversize `LEN` are dropped.
 - Last character of message must be \n.
@@ -71,11 +71,11 @@ Each incoming line has a fixed-width header with spaces, a variable message, and
 
 ### 3.1 On-Disk Format
 Each line is written exactly as received, except the server prepends its own UTC timestamp:
-[TS(24)] [LVL(4)] [HOST(32)] [CODE(4)] [LEN(4)]: [MSG]\n
+[TS(24)] [LVL(4)] [HOST(32)] [CODE(12)] [LEN(5)]: [MSG]\n
 
 example:
 ```
-2025-10-26T14:08:59.041Z ERRO web-02.example.local          G500 0042: Timeout accessing gateway id=gw-7 after 10s
+2025-10-26T14:08:59.041Z ERRO web-02.example.local          G500         00042: Timeout accessing gateway id=gw-7 after 10s
 ```
 
 
@@ -164,7 +164,7 @@ In `DEV_MODE=true`:
 | Error | Behavior |
 |:------|:----------|
 | Malformed header / bad LEN | Drop line, increment `protocol_errors_total`. |
-| Oversize (`LEN > 4096` or total length > LEN + 49) | Drop line, increment `oversize_drops_total`. |
+| Oversize (`LEN > 4096` or total length > LEN + 58) | Drop line, increment `oversize_drops_total`. |
 | Queue full | Drop and increment `dropped_total`. |
 | File write error | Log to stderr (DEV_MODE) and retry reopen. |
 | Rotation failure | Just die and print error to console, nothing else you can do|
@@ -183,7 +183,7 @@ In `DEV_MODE=true`:
   struct Record {
       lvl: [u8;4],
       host: [u8;32],
-      code: [u8;4],
+      code: [u8;12],
       len: u16,
       msg: Vec<u8>,
       recv_ts: [u8;24], // server timestamp as bytes
@@ -217,12 +217,12 @@ In `DEV_MODE=true`:
 
 Client send (pseudo):
 ```
-ERRO web-02.example.local          G500 0042: Timeout accessing gateway id=gw-7 after 10s\n
+ERRO web-02.example.local          G500         00042: Timeout accessing gateway id=gw-7 after 10s\n
 ```
 
 Server writes:
 ```
-2025-10-26T14:08:59.041Z ERRO web-02.example.local          G500 0042: Timeout accessing gateway id=gw-7 after 10s
+2025-10-26T14:08:59.041Z ERRO web-02.example.local          G500         00042: Timeout accessing gateway id=gw-7 after 10s
 ```
 
 	Server emits (after 60 s idle):
@@ -232,7 +232,7 @@ Server writes:
 
 	Server logs stats line in misc-20251026.log:
 	```
-	2025-10-26T14:10:00.000Z INFOserver.local                  STAT0000: recv=12345 dropped=0 oversize=0 activity_written=100 error_written=200 misc_written=300 uptime=1.00h
+	2025-10-26T14:10:00.000Z INFO server.local                 LOGSTATS    00097: recv=12345 dropped=0 oversize=0 activity_written=100 error_written=200 misc_written=300 uptime=1.00h
 	```
 
 

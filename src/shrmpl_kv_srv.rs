@@ -393,11 +393,8 @@ async fn process_single_command(
                 };
                 result.push_str(&format!("{}={},{}\n", key, value_str, expiration_str));
             }
-            if result.is_empty() {
-                "\n".to_string()
-            } else {
-                result
-            }
+            result.push_str("\n"); // Add empty line to indicate end
+            result
         }
         _ => "ERROR unknown command\n".to_string(),
     }

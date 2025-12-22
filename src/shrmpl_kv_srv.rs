@@ -32,10 +32,16 @@ fn parse_expiration(exp_str: &str) -> Option<Duration> {
         num_str.parse::<u64>().ok().map(Duration::from_secs)
     } else if exp_str.ends_with("min") {
         let num_str = exp_str.trim_end_matches("min");
-        num_str.parse::<u64>().ok().map(|secs| Duration::from_secs(secs * 60))
+        num_str
+            .parse::<u64>()
+            .ok()
+            .map(|secs| Duration::from_secs(secs * 60))
     } else if exp_str.ends_with("h") {
         let num_str = exp_str.trim_end_matches('h');
-        num_str.parse::<u64>().ok().map(|hours| Duration::from_secs(hours * 3600))
+        num_str
+            .parse::<u64>()
+            .ok()
+            .map(|hours| Duration::from_secs(hours * 3600))
     } else {
         None
     }
@@ -69,8 +75,9 @@ async fn main() {
         .unwrap_or_else(|| "skv-srv".to_string());
 
     // Load new logging configuration
-    let log_level =
-        shrmpl_log_client::LogLevel::from_str(config.get("LOG_LEVEL").map_or("INFO", |v| v.as_str()));
+    let log_level = shrmpl_log_client::LogLevel::from_str(
+        config.get("LOG_LEVEL").map_or("INFO", |v| v.as_str()),
+    );
     let log_console = config
         .get("LOG_CONSOLE")
         .map(|s| s == "true")
@@ -80,8 +87,14 @@ async fn main() {
         .map(|s| s == "true")
         .unwrap_or(false);
 
-    let logger =
-        shrmpl_log_client::Logger::new(slog_dest, server_name, log_level, log_console, send_actv, send_log);
+    let logger = shrmpl_log_client::Logger::new(
+        slog_dest,
+        server_name,
+        log_level,
+        log_console,
+        send_actv,
+        send_log,
+    );
     let addr_parts: Vec<&str> = bind_addr.split(':').collect();
     if addr_parts.len() != 2 {
         logger
@@ -110,7 +123,10 @@ async fn main() {
     let std_listener: StdTcpListener = socket.into();
     let listener = TcpListener::from_std(std_listener).expect("Failed to convert listener");
     logger
-        .info("KVSERVERLIST", &format!("shrmpl-kv-srv version {} listening on {}", VERSION, addr))
+        .info(
+            "KVSERVERLIST",
+            &format!("shrmpl-kv-srv version {} listening on {}", VERSION, addr),
+        )
         .await;
 
     let store: KvStore = Arc::new(RwLock::new(HashMap::new()));
@@ -183,16 +199,16 @@ async fn handle_connection(
     let mut line = String::new();
 
     // Heartbeat interval: send UPONG every 2 minutes
-    let mut heartbeat = interval(Duration::from_secs(120));
+    // let mut heartbeat = interval(Duration::from_secs(120));
 
     loop {
         line.clear();
         tokio::select! {
-            _ = heartbeat.tick() => {
-                if writer.write_all(b"UPONG\n").await.is_err() {
-                    return; // Connection closed
-                }
-            }
+            // _ = heartbeat.tick() => {
+            //     if writer.write_all(b"UPONG\n").await.is_err() {
+            //         return; // Connection closed
+            //     }
+            // }
             result = reader.read_line(&mut line) => {
                 match result {
                     Ok(0) => return, // EOF
@@ -217,10 +233,7 @@ async fn handle_connection(
     }
 }
 
-async fn process_single_command(
-    parts: Vec<&str>,
-    store: &KvStore,
-) -> String {
+async fn process_single_command(parts: Vec<&str>, store: &KvStore) -> String {
     if parts.is_empty() {
         return "ERROR unknown command\n".to_string();
     }
@@ -243,7 +256,7 @@ async fn process_single_command(
                     if let Some(exp_time) = stored.expires_at {
                         if exp_time <= SystemTime::now() {
                             store_write.remove(key);
-                            "ERROR key not found\n".to_string()
+                            "*KEY NOT FOUND*\n".to_string()
                         } else {
                             match &stored.value {
                                 Value::Int(i) => format!("{}\n", i),
@@ -257,7 +270,7 @@ async fn process_single_command(
                         }
                     }
                 }
-                 None => "*KEY NOT FOUND*\n".to_string(),
+                None => "*KEY NOT FOUND*\n".to_string(),
             }
         }
         "SET" => {
@@ -358,7 +371,7 @@ async fn process_single_command(
                     if let Some(exp_time) = stored.expires_at {
                         if exp_time <= SystemTime::now() {
                             store_write.remove(key);
-                            "ERROR key not found\n".to_string()
+                            "*KEY NOT FOUND*\n".to_string()
                         } else {
                             store_write.remove(key);
                             "OK\n".to_string()
@@ -368,7 +381,7 @@ async fn process_single_command(
                         "OK\n".to_string()
                     }
                 }
-                 None => "*KEY NOT FOUND*\n".to_string(),
+                None => "*KEY NOT FOUND*\n".to_string(),
             }
         }
         "LIST" => {
@@ -384,7 +397,8 @@ async fn process_single_command(
                 };
                 let expiration_str = match stored_value.expires_at {
                     Some(exp_time) => {
-                        let timestamp = exp_time.duration_since(std::time::UNIX_EPOCH)
+                        let timestamp = exp_time
+                            .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
                             .as_secs();
                         timestamp.to_string()
@@ -428,6 +442,11 @@ async fn process_command(
         process_single_command(parts, store).await
     };
 
-    logger.debug("KVCMDPROC", &format!("Processing command: {} = {}", line.trim(), result.trim())).await;
+    logger
+        .debug(
+            "KVCMDPROC",
+            &format!("Processing command: {} = {}", line.trim(), result.trim()),
+        )
+        .await;
     result
 }

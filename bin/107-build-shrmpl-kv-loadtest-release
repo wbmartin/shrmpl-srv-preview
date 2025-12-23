@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+echo "Building shrmpl-kv-loadtest..."
+cargo build --bin shrmpl-kv-loadtest --release
+echo "Build complete."

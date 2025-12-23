@@ -1,0 +1,77 @@
+#!/bin/bash
+set -e
+
+CONFIG_FILE=etc/shrmpl-kv-srv-loc.env
+SERVER_STARTED_BY_SCRIPT=false
+
+# Function to check if server is running
+is_server_running() {
+    # Read BIND_ADDR from config
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Config file $CONFIG_FILE not found"
+        exit 1
+    fi
+
+    BIND_ADDR=$(grep "^BIND_ADDR=" "$CONFIG_FILE" | cut -d'=' -f2)
+    if [ -z "$BIND_ADDR" ]; then
+        echo "BIND_ADDR not found in config"
+        exit 1
+    fi
+
+    # Extract host and port
+    IFS=':' read -r HOST PORT <<< "$BIND_ADDR"
+
+    # Try to connect
+    if nc -z "$HOST" "$PORT" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to wait for server
+wait_for_server() {
+    local retries=30
+    local count=0
+    while [ $count -lt $retries ]; do
+        if is_server_running; then
+            echo "Server is ready"
+            return 0
+        fi
+        echo "Waiting for server... ($((count + 1))/$retries)"
+        sleep 1
+        ((count++))
+    done
+    echo "Server failed to start within 30 seconds"
+    exit 1
+}
+
+# Build load test if needed
+# if [ ! -f "target/release/shrmpl-kv-loadtest" ]; then
+    echo "Building load test..."
+    ./bin/107-build-shrmpl-kv-loadtest-release
+# fi
+
+# Check if server is running
+if ! is_server_running; then
+    echo "Starting shrmpl-kv-srv..."
+    ./bin/105-run-shrmpl-kv-dev &
+    SERVER_PID=$!
+    SERVER_STARTED_BY_SCRIPT=true
+    wait_for_server
+else
+    echo "Server already running"
+fi
+
+# Run load test
+echo "Running load test..."
+./target/release/shrmpl-kv-loadtest "$CONFIG_FILE" "$@"
+
+# Cleanup
+if [ "$SERVER_STARTED_BY_SCRIPT" = true ]; then
+    echo "Stopping server..."
+    kill $SERVER_PID 2>/dev/null || true
+    wait $SERVER_PID 2>/dev/null || true
+fi
+
+echo "Test complete."

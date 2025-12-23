@@ -6,7 +6,7 @@ pub struct KvClient {
     reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
     writer: tokio::net::tcp::OwnedWriteHalf,
 }
-
+#[allow(dead_code)]
 impl KvClient {
     pub async fn connect(addr: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let stream = match timeout(Duration::from_secs(5), TcpStream::connect(addr)).await {
@@ -15,13 +15,17 @@ impl KvClient {
                 return Err(format!("Failed to connect to {}: {}", addr, e).into());
             }
             Err(_) => {
-                return Err(format!("Connection timeout: Could not connect to {} within 5 seconds", addr).into());
+                return Err(format!(
+                    "Connection timeout: Could not connect to {} within 5 seconds",
+                    addr
+                )
+                .into());
             }
         };
-        
+
         stream.set_nodelay(true)?;
         let (reader, writer) = stream.into_split();
-        
+
         Ok(KvClient {
             reader: BufReader::new(reader),
             writer,
@@ -29,7 +33,12 @@ impl KvClient {
     }
 
     async fn send_command(&mut self, cmd: &str) -> Result<String, Box<dyn std::error::Error>> {
-        if self.writer.write_all(format!("{}\n", cmd).as_bytes()).await.is_err() {
+        if self
+            .writer
+            .write_all(format!("{}\n", cmd).as_bytes())
+            .await
+            .is_err()
+        {
             return Err("Failed to send command".into());
         }
 
@@ -60,7 +69,7 @@ impl KvClient {
         }
 
         let response = self.send_command(&format!("GET {}", key)).await?;
-        
+
         if response.starts_with("ERROR") {
             if response.contains("key not found") {
                 Ok(None)
@@ -78,7 +87,7 @@ impl KvClient {
         }
 
         let response = self.send_command(&format!("SET {} {}", key, value)).await?;
-        
+
         if response == "OK" {
             Ok(())
         } else {
@@ -86,13 +95,20 @@ impl KvClient {
         }
     }
 
-    pub async fn set_with_ttl(&mut self, key: &str, value: &str, ttl: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn set_with_ttl(
+        &mut self,
+        key: &str,
+        value: &str,
+        ttl: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if key.len() > 100 || value.len() > 100 {
             return Err("Key or value length exceeds 100 characters".into());
         }
 
-        let response = self.send_command(&format!("SET {} {} {}", key, value, ttl)).await?;
-        
+        let response = self
+            .send_command(&format!("SET {} {} {}", key, value, ttl))
+            .await?;
+
         if response == "OK" {
             Ok(())
         } else {
@@ -106,7 +122,7 @@ impl KvClient {
         }
 
         let response = self.send_command(&format!("INCR {}", key)).await?;
-        
+
         if response.starts_with("ERROR") {
             Err(response.into())
         } else {
@@ -114,13 +130,17 @@ impl KvClient {
         }
     }
 
-    pub async fn incr_with_ttl(&mut self, key: &str, ttl: &str) -> Result<i64, Box<dyn std::error::Error>> {
+    pub async fn incr_with_ttl(
+        &mut self,
+        key: &str,
+        ttl: &str,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
         if key.len() > 100 {
             return Err("Key length exceeds 100 characters".into());
         }
 
         let response = self.send_command(&format!("INCR {} {}", key, ttl)).await?;
-        
+
         if response.starts_with("ERROR") {
             Err(response.into())
         } else {
@@ -134,7 +154,7 @@ impl KvClient {
         }
 
         let response = self.send_command(&format!("DEL {}", key)).await?;
-        
+
         if response == "OK" {
             Ok(true)
         } else if response.contains("key not found") {
@@ -146,7 +166,7 @@ impl KvClient {
 
     pub async fn ping(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let response = self.send_command("PING").await?;
-        
+
         if response == "PONG" {
             Ok(())
         } else {
@@ -154,7 +174,32 @@ impl KvClient {
         }
     }
 
-    pub async fn list(&mut self) -> Result<Vec<(String, String, Option<u64>)>, Box<dyn std::error::Error>> {
+    pub async fn batch(
+        &mut self,
+        commands: &[&str],
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        if commands.len() > 3 {
+            return Err("Too many commands in batch (max 3)".into());
+        }
+        if commands.is_empty() {
+            return Err("No commands in batch".into());
+        }
+
+        let batch_cmd = format!("BATCH {}", commands.join(";"));
+        let response = timeout(Duration::from_secs(3), self.send_command(&batch_cmd))
+            .await
+            .map_err(|_| "Batch command timed out after 3 seconds")??;
+
+        if response.starts_with("ERROR") {
+            Err(response.into())
+        } else {
+            Ok(response.split(';').map(|s| s.to_string()).collect())
+        }
+    }
+
+    pub async fn list(
+        &mut self,
+    ) -> Result<Vec<(String, String, Option<u64>)>, Box<dyn std::error::Error>> {
         // Send LIST command
         if self.writer.write_all(b"LIST\n").await.is_err() {
             return Err("Failed to send command".into());

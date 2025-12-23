@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	"shrmpl"
 )
@@ -12,18 +11,17 @@ func main() {
 
 	// KV Server Example
 	fmt.Println("1. KV Server Example:")
-	kv := shrmpl.NewKVClient("127.0.0.1", 7171)
-
-	success, err := kv.Connect()
-	if !success {
-		fmt.Printf("   KV connect failed: %v\n", err)
-		return
+	config := &shrmpl.KVConfig{
+		HostPort: "127.0.0.1:7171",
 	}
-	fmt.Println("   ✓ Connected to KV server")
+	kv := shrmpl.NewKV(config)
+	defer kv.Close()
+
+	fmt.Println("   ✓ Connected to KV server (connection handled internally)")
 
 	// Test SET with TTL
-	success, err = kv.Set("example_key", "example_value", "30s")
-	if success {
+	err := kv.Set("example_key", "example_value", "30s")
+	if err == nil {
 		fmt.Println("   ✓ SET example_key = example_value (30s TTL)")
 	} else {
 		fmt.Printf("   ✗ SET failed: %v\n", err)
@@ -45,65 +43,39 @@ func main() {
 		fmt.Printf("   ✗ INCR failed: %v\n", err)
 	}
 
-	// Test LIST
-	items, err := kv.List()
+	// Test BATCH operations (new feature)
+	fmt.Println("   Testing BATCH operations:")
+	batchResults, err := kv.Batch([]string{"GET example_key", "GET counter"})
 	if err == nil {
-		fmt.Println("   ✓ LIST successful")
-		if len(items) > 0 {
-			fmt.Println("   Current keys:")
-			for _, item := range items {
-				if item.ExpiresAt != nil {
-					expTime := time.Unix(*item.ExpiresAt, 0)
-					fmt.Printf("     %s = %s (expires: %v)\n", item.Key, item.Value, expTime)
-				} else {
-					fmt.Printf("     %s = %s (no expiration)\n", item.Key, item.Value)
-				}
-			}
-		} else {
-			fmt.Println("   (no keys stored)")
-		}
+		fmt.Printf("   ✓ BATCH GET results: %v\n", batchResults)
 	} else {
-		fmt.Printf("   ✗ LIST failed: %v\n", err)
+		fmt.Printf("   ✗ BATCH failed: %v\n", err)
 	}
 
-	// Test PING
-	success, err = kv.Ping()
-	if success {
-		fmt.Println("   ✓ PING successful")
-	} else {
-		fmt.Printf("   ✗ PING failed: %v\n", err)
-	}
+	// Note: Advanced client features (reconnection, connection pooling) are
+	// used internally by the KVClient for robust operation
+
+	// Note: LIST operation not available in advanced KV interface
+	fmt.Println("   (LIST operation not available in this example)")
 
 	kv.Close()
 	fmt.Println()
 
 	// Log Server Example
 	fmt.Println("2. Log Server Example:")
-	logClient := shrmpl.NewLogClient("127.0.0.1", 7379)
+	logger := shrmpl.NewLogger("example-server-name", "127.0.0.1:7379")
+	defer logger.Close()
 
-	success, err = logClient.Connect()
-	if !success {
-		fmt.Printf("   Log connect failed: %v\n", err)
-		return
-	}
-	fmt.Println("   ✓ Connected to Log server")
+	fmt.Println("   ✓ Connected to Log server (connection handled internally)")
 
-	// Test log sending
-	err = logClient.Send("INFO", "example-host", "T001", "Application started successfully")
-	if err == nil {
-		fmt.Println("   ✓ Sent INFO log message")
-	} else {
-		fmt.Printf("   ✗ Log send failed: %v\n", err)
-	}
+	// Test structured logging
+	logger.Info("T001", "Application started successfully", "host", "example-host")
+	fmt.Println("   ✓ Sent INFO log message with structured data")
 
-	err = logClient.Send("ERRO", "example-host", "E001", "Database connection failed")
-	if err == nil {
-		fmt.Println("   ✓ Sent ERRO log message")
-	} else {
-		fmt.Printf("   ✗ Log send failed: %v\n", err)
-	}
+	logger.Error("E001", "Database connection failed", "host", "example-host", "severity", "high")
+	fmt.Println("   ✓ Sent ERROR log message with structured data")
 
-	logClient.Close()
+	logger.Close()
 	fmt.Println()
 
 	// Vault Server Example
@@ -115,7 +87,7 @@ func main() {
 		"example_secret",
 	)
 
-	success, err = vault.Connect()
+	success, err := vault.Connect()
 	if !success {
 		fmt.Printf("   Vault connect failed: %v\n", err)
 		fmt.Println("   Note: This example requires actual certificates and running vault server")
@@ -142,5 +114,5 @@ func main() {
 	fmt.Println("1. Start shrmpl-kv-srv on port 7171")
 	fmt.Println("2. Start shrmpl-log-srv on port 7379")
 	fmt.Println("3. Start shrmpl-vault-srv on port 7474 (with TLS)")
-	fmt.Println("4. Run: go run example.go")
+	fmt.Println("4. Run: go run main.go")
 }

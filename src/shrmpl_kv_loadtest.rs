@@ -251,24 +251,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = TestConfig {
         server_addr,
         num_users: 5,
-        operations_per_user: 5000,
+        operations_per_user: 10000,
         shared_connection,
         full_test,
     };
 
+    println!("Load Test Configuration:");
+    println!("├── Concurrent Users: {}", config.num_users);
+    println!("├── Operations per User: {}", config.operations_per_user);
+    println!("├── Total Operations: {}", config.num_users * config.operations_per_user);
     println!(
-        "Starting load test with {} connections, {} operations each",
-        config.num_users, config.operations_per_user
+        "├── Connection Mode: {}",
+        if config.shared_connection { "shared" } else { "multi" }
     );
     println!(
-        "Connection mode: {}",
-        if config.shared_connection {
-            "shared (you can also run without --shared for multi-connection mode)"
-        } else {
-            "multi (you can also run with --shared for shared connection mode)"
-        }
+        "├── Test Mode: {}",
+        if config.full_test { "full comprehensive" } else { "batch GET only" }
     );
-    println!("Server: {}", config.server_addr);
+    println!("└── Server: {}", config.server_addr);
+    println!();
+    println!("Starting test execution...");
 
     let test_start = Instant::now();
     let results = run_test(config).await?;

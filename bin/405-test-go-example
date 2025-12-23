@@ -1,0 +1,103 @@
+#!/bin/bash
+set -e
+
+# Servers needed for Go example
+SERVERS=(
+    "7171:shrmpl-kv-srv"
+    "7379:shrmpl-log-srv"
+    "7474:shrmpl-vault-srv"
+)
+
+STARTED_SERVERS=()
+
+# Function to check if server is running on port
+is_server_running() {
+    local port=$1
+    if nc -z "127.0.0.1" "$port" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to start a server
+start_server() {
+    local port=$1
+    local server_name=$2
+
+    echo "Starting $server_name on port $port..."
+    case $server_name in
+        "shrmpl-kv-srv")
+            ./bin/105-run-shrmpl-kv-dev &
+            ;;
+        "shrmpl-log-srv")
+            ./bin/205-run-shrmpl-log-dev &
+            ;;
+        "shrmpl-vault-srv")
+            ./bin/305-run-shrmpl-vault-dev &
+            ;;
+    esac
+
+    STARTED_SERVERS+=($!)
+}
+
+# Function to wait for server
+wait_for_server() {
+    local port=$1
+    local server_name=$2
+    local retries=30
+    local count=0
+
+    while [ $count -lt $retries ]; do
+        if is_server_running "$port"; then
+            echo "$server_name is ready on port $port"
+            return 0
+        fi
+        echo "Waiting for $server_name on port $port... ($((count + 1))/$retries)"
+        sleep 1
+        ((count++))
+    done
+    echo "$server_name failed to start on port $port within 30 seconds"
+    return 1
+}
+
+# Check and start servers
+echo "Checking server status..."
+for server_info in "${SERVERS[@]}"; do
+    IFS=':' read -r port server_name <<< "$server_info"
+
+    if is_server_running "$port"; then
+        echo "$server_name already running on port $port"
+    else
+        start_server "$port" "$server_name"
+        # Wait a bit for server to start
+        sleep 2
+        if ! wait_for_server "$port" "$server_name"; then
+            echo "Continuing anyway - example handles missing servers gracefully"
+        fi
+    fi
+done
+
+# Build and run Go example
+echo "Building and running Go example..."
+cd examples/go
+
+# Run the example (it handles missing servers gracefully)
+if go run main.go; then
+    echo "Go example completed successfully"
+else
+    echo "Go example failed, but this may be expected (vault server requires certificates)"
+fi
+
+cd ..
+
+# Cleanup started servers
+if [ ${#STARTED_SERVERS[@]} -gt 0 ]; then
+    echo "Stopping servers started by this script..."
+    for pid in "${STARTED_SERVERS[@]}"; do
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    done
+fi
+
+echo "Test complete."

@@ -9,7 +9,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
-use rustls::ServerConfig;
+use rustls::server::AllowAnyAuthenticatedClient;
+use rustls::{RootCertStore, ServerConfig};
 use rustls_pemfile::{certs, pkcs8_private_keys, rsa_private_keys};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
@@ -319,15 +320,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.logger.error("CERTCHECK", &msg).await;
     }
 
+    let mtls_client_ca_cert_path = config
+        .get("MTLS_CLIENT_CA_CERT_PATH")
+        .expect("MTLS_CLIENT_CA_CERT_PATH required");
+
     // Load TLS certificates
-    let tls_config = match load_server_config(cert_privkey_path, cert_fullchain_path) {
-        Ok(config) => config,
-        Err(e) => {
-            let msg = format!("Failed to load TLS configuration: {}", e);
-            error!("{}", msg);
-            return Err(e);
-        }
-    };
+    let tls_config =
+        match load_server_config(cert_privkey_path, cert_fullchain_path, mtls_client_ca_cert_path) {
+            Ok(config) => config,
+            Err(e) => {
+                let msg = format!("Failed to load TLS configuration: {}", e);
+                error!("{}", msg);
+                return Err(e);
+            }
+        };
 
     // Create TLS acceptor
     let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config));
@@ -394,39 +400,107 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn load_server_config(
+
     privkey_path: &str,
+
     fullchain_path: &str,
+
+    client_ca_path: &str,
+
 ) -> Result<ServerConfig, Box<dyn std::error::Error>> {
+
     // Load and parse certificate
+
     let cert_file = fs::File::open(fullchain_path)?;
+
     let mut cert_reader = BufReader::new(cert_file);
-    let certs: Vec<_> = certs(&mut cert_reader)?
+
+    let server_certs: Vec<_> = certs(&mut cert_reader)?
+
         .into_iter()
+
         .map(rustls::Certificate)
+
         .collect();
 
+
+
     // Load and parse private key
+
     let key_file = fs::File::open(privkey_path)?;
+
     let mut key_reader = BufReader::new(key_file);
+
     
+
     // Try PKCS8 first, then RSA
+
     let keys = pkcs8_private_keys(&mut key_reader)?;
+
     let key = if !keys.is_empty() {
+
         rustls::PrivateKey(keys[0].clone())
+
     } else {
+
         // Reset reader and try RSA keys
+
         let mut key_reader = BufReader::new(fs::File::open(privkey_path)?);
+
         let rsa_keys = rsa_private_keys(&mut key_reader)?;
+
         if rsa_keys.is_empty() {
+
             return Err("No valid private key found".into());
+
         }
+
         rustls::PrivateKey(rsa_keys[0].clone())
+
     };
 
+
+
+    // Load and parse client CA certificate
+
+    let client_ca_file = fs::File::open(client_ca_path)?;
+
+    let mut client_ca_reader = BufReader::new(client_ca_file);
+
+    let client_ca_certs: Vec<_> = certs(&mut client_ca_reader)?
+
+        .into_iter()
+
+        .map(rustls::Certificate)
+
+        .collect();
+
+    
+
+    let mut root_cert_store = RootCertStore::empty();
+
+    for cert in client_ca_certs {
+
+        root_cert_store.add(&cert)?;
+
+    }
+
+
+
+    let client_verifier = Arc::new(AllowAnyAuthenticatedClient::new(root_cert_store));
+
+
+
     let config = rustls::ServerConfig::builder()
+
         .with_safe_defaults()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)?;
+
+        .with_client_cert_verifier(client_verifier)
+
+        .with_single_cert(server_certs, key)?;
+
+
 
     Ok(config)
+
 }

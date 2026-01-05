@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set -e
+
+# Check if running on Linux
+if [[ "$(uname -s)" != "Linux" ]]; then
+  echo "Error: This script must be run on a Linux machine for native builds."
+  exit 1
+fi
+
+# Check if Cargo is installed
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "Error: Rust/Cargo is not installed. Please install Rust (e.g., via rustup or apt install rustc cargo)."
+  exit 1
+fi
+
+echo "Building all binaries natively for Linux..."
+
+# Get project directory (parent of bin)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Create dist directories
+mkdir -p "$PROJECT_DIR/dist/linux"
+
+# Change to project directory
+cd "$PROJECT_DIR"
+
+# Build all binaries natively
+echo "Building all binaries for Linux..."
+cargo build --release --bins
+
+# Copy binaries to dist/linux (excluding shrmpl-kv-loadtest)
+cp "$PROJECT_DIR/target/release/shrmpl-kv-srv" "$PROJECT_DIR/dist/linux/"
+cp "$PROJECT_DIR/target/release/shrmpl-kv-cli" "$PROJECT_DIR/dist/linux/"
+cp "$PROJECT_DIR/target/release/shrmpl-log-srv" "$PROJECT_DIR/dist/linux/"
+cp "$PROJECT_DIR/target/release/shrmpl-vault-srv" "$PROJECT_DIR/dist/linux/"
+cp "$PROJECT_DIR/target/release/shrmpl-vault-cli" "$PROJECT_DIR/dist/linux/"
+
+echo "Linux native build complete. Binaries in dist/linux"

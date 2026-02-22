@@ -10,7 +10,16 @@ fi
 
 # Check if Cargo is installed
 if ! command -v cargo >/dev/null 2>&1; then
-  echo "Error: Rust/Cargo is not installed. Please install Rust (e.g., via rustup or apt install rustc cargo)."
+  echo "Error: Rust/Cargo is not installed."
+  echo "Recommended: Install via rustup (curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh), then restart your shell."
+  echo "Alternatively: apt update && apt install build-essential && apt install cargo (but rustup is preferred)."
+  exit 1
+fi
+
+# Check if GCC (cc) is installed
+if ! command -v cc >/dev/null 2>&1; then
+  echo "Error: GCC (cc) not found, required for linking."
+  echo "Install with: apt update && apt install build-essential"
   exit 1
 fi
 

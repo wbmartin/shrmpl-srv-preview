@@ -47,6 +47,7 @@ struct HookConfig {
     script: String,
     timeout: u64,
     dedupe_window: usize,
+    slack_webhook: Option<String>,
     env_vars: HashMap<String, String>,
 }
 
@@ -529,6 +530,84 @@ fn json_extract_string(json: &str, key: &str) -> Option<String> {
     Some(result)
 }
 
+// --- Slack notifications ---
+
+async fn send_slack(webhook_url: &str, message: &str, logger: &Logger) {
+    let payload = format!(
+        r#"{{"text":"{}"}}"#,
+        message
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+    );
+
+    let uri: hyper::Uri = match webhook_url.parse() {
+        Ok(u) => u,
+        Err(e) => {
+            logger
+                .error("CICDSLAK", &format!("Invalid Slack webhook URL: {}", e))
+                .await;
+            return;
+        }
+    };
+
+    let host = match uri.host() {
+        Some(h) => h.to_string(),
+        None => {
+            logger
+                .error("CICDSLAK", "Slack webhook URL missing host")
+                .await;
+            return;
+        }
+    };
+
+    let https = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_native_roots()
+        .https_only()
+        .enable_http1()
+        .build();
+
+    let client: hyper::Client<_, Body> = hyper::Client::builder().build(https);
+
+    let req = match Request::builder()
+        .method(Method::POST)
+        .uri(webhook_url)
+        .header("Content-Type", "application/json")
+        .header("Host", &host)
+        .body(Body::from(payload))
+    {
+        Ok(r) => r,
+        Err(e) => {
+            logger
+                .error("CICDSLAK", &format!("Failed to build Slack request: {}", e))
+                .await;
+            return;
+        }
+    };
+
+    match tokio::time::timeout(tokio::time::Duration::from_secs(10), client.request(req)).await {
+        Ok(Ok(resp)) => {
+            let status = resp.status();
+            if !status.is_success() {
+                logger
+                    .warn(
+                        "CICDSLAK",
+                        &format!("Slack returned HTTP {}", status.as_u16()),
+                    )
+                    .await;
+            }
+        }
+        Ok(Err(e)) => {
+            logger
+                .warn("CICDSLAK", &format!("Slack request failed: {}", e))
+                .await;
+        }
+        Err(_) => {
+            logger.warn("CICDSLAK", "Slack request timed out (10s)").await;
+        }
+    }
+}
+
 // --- Script execution ---
 
 async fn run_script(hook: &HookConfig, info: &WebhookInfo, state: &AppState) {
@@ -545,6 +624,20 @@ async fn run_script(hook: &HookConfig, info: &WebhookInfo, state: &AppState) {
             ),
         )
         .await;
+
+    // Slack: pipeline started
+    if let Some(ref url) = hook.slack_webhook {
+        let branch_info = if info.branch.is_empty() {
+            String::new()
+        } else {
+            format!(" branch={}", info.branch)
+        };
+        let msg = format!(
+            ":rocket: Pipeline started for `{}`{} (delivery={})",
+            hook.guid, branch_info, info.delivery_id
+        );
+        send_slack(url, &msg, &state.logger).await;
+    }
 
     let mut cmd = tokio::process::Command::new(&hook.script);
     cmd.env("SHRMPL_HOOK_GUID", &hook.guid);
@@ -656,6 +749,20 @@ async fn run_script(hook: &HookConfig, info: &WebhookInfo, state: &AppState) {
                 ),
             )
             .await;
+    }
+
+    // Slack: pipeline result
+    if let Some(ref url) = hook.slack_webhook {
+        let (icon, status_word) = if result == 0 {
+            (":white_check_mark:", "succeeded")
+        } else {
+            (":x:", "failed")
+        };
+        let msg = format!(
+            "{} Pipeline {} for `{}` — exit_code={} duration={}s",
+            icon, status_word, hook.guid, result, duration
+        );
+        send_slack(url, &msg, &state.logger).await;
     }
 
     // Update last run info
@@ -800,6 +907,9 @@ fn load_hooks(
             .and_then(|v| v.parse().ok())
             .unwrap_or(50);
 
+        let slack_webhook = env_vars.get("HOOK_SLACK_WEBHOOK").cloned()
+            .filter(|s| !s.is_empty());
+
         let hook = HookConfig {
             guid: guid.clone(),
             provider,
@@ -807,9 +917,13 @@ fn load_hooks(
             script,
             timeout,
             dedupe_window,
+            slack_webhook,
             env_vars,
         };
 
+        if hook.slack_webhook.is_none() {
+            println!("  HOOK_SLACK_WEBHOOK not defined in env var; slack notification disabled for guid={}", guid);
+        }
         println!("  Loaded hook: {} (guid={}, provider={})", filename, guid, hook.provider);
         hooks.insert(guid, hook);
     }

@@ -45,5 +45,6 @@ cp "$PROJECT_DIR/target/release/shrmpl-kv-cli" "$PROJECT_DIR/dist/linux/"
 cp "$PROJECT_DIR/target/release/shrmpl-log-srv" "$PROJECT_DIR/dist/linux/"
 cp "$PROJECT_DIR/target/release/shrmpl-vault-srv" "$PROJECT_DIR/dist/linux/"
 cp "$PROJECT_DIR/target/release/shrmpl-vault-cli" "$PROJECT_DIR/dist/linux/"
+cp "$PROJECT_DIR/target/release/shrmpl-cicd-srv" "$PROJECT_DIR/dist/linux/"
 
 echo "Linux native build complete. Binaries in dist/linux"

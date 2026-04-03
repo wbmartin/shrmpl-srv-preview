@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+CONFIG_FILE=/Users/brandon/Code/shrmpl-srv-preview/etc/cicd-dev.env
+
+echo "Building shrmpl-cicd-srv for development (macOS)..."
+
+cargo build --bin shrmpl-cicd-srv
+
+echo "Launching shrmpl-cicd-srv with config $CONFIG_FILE..."
+
+./target/debug/shrmpl-cicd-srv $CONFIG_FILE

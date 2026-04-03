@@ -3,3 +3,4 @@
 *.pem
 .DS_Store
 examples/python/__pycache__
+/etc/cicd-hooks/echo-test-deadbeef.env

@@ -47,6 +47,26 @@ impl Logger {
         Self { dest, host, log_level, log_console, send_actv, send_log }
     }
 
+    /// Check connectivity to SLOG server at startup. Prints a warning to stdout
+    /// if logging is enabled but the destination is unreachable.
+    pub async fn check_connectivity(&self) {
+        if !self.send_log || self.dest.is_empty() {
+            println!("WARNING: SLOG remote logging is disabled (SLOG_SEND_LOG=false or SLOG_DEST empty)");
+            return;
+        }
+        match tokio::time::timeout(Duration::from_secs(3), TcpStream::connect(&self.dest)).await {
+            Ok(Ok(_)) => {
+                println!("SLOG connection OK ({})", self.dest);
+            }
+            Ok(Err(e)) => {
+                println!("WARNING: Cannot reach SLOG server at {} — {}", self.dest, e);
+            }
+            Err(_) => {
+                println!("WARNING: SLOG server at {} connection timed out (3s)", self.dest);
+            }
+        }
+    }
+
     pub async fn log(&self, level: &str, code: &str, message: &str) {
         let message_level = match level {
             "DEBG" => LogLevel::Debug,

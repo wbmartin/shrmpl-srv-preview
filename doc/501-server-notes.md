@@ -64,3 +64,69 @@ Host ssh.dev.azure.com
     IdentityFile /srv/shrmpl/.ssh/azdo_shrmpl
     IdentitiesOnly yes
 ```
+
+
+## Creating the other services
+
+```
+useradd --system --no-create-home --shell /usr/sbin/nologin shrmpl
+```
+
+```
+vi /srv/shrmpl/etc/shrmpl-log.service
+```
+
+```
+
+# ln -s /srv/shrmpl/etc/shrmpl-log-central.service /etc/systemd/system/shrmpl-log-central.service
+
+[Unit]
+Description=shrmpl log reciever
+After=network.target
+
+[Service]
+Type=simple
+User=shrmpl
+ExecStart=/srv/shrmpl/libexec/shrmpl-log-srv /srv/shrmpl/etc/shrmpl-log-central.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```
+systemctl daemon-reload
+systemctl start shrmpl-log-central
+systemctl enable shrmpl-log-central
+journalctl -u shrmpl-log-central -f
+```
+```
+vi /srv/shrmpl/etc/shrmpl-kv-srv-central.env
+```
+
+```
+# ln -s /srv/shrmpl/etc/shrmpl-kv-central.service /etc/systemd/system/shrmpl-kv-central.service
+
+[Unit]
+Description=shrmpl kv reciever
+After=network.target
+
+[Service]
+Type=simple
+User=shrmpl
+ExecStart=/srv/shrmpl/libexec/shrmpl-kv-srv /srv/shrmpl/etc/shrmpl-kv-srv-central.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```
+systemctl daemon-reload
+systemctl start shrmpl-kv-central
+systemctl enable shrmpl-kv-central
+journalctl -u shrmpl-kv-central -f
+
+```

@@ -255,28 +255,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config(&args[1]);
 
     // Extract configuration values
-    let bind_addr = config.get("BIND_ADDR").unwrap_or(&"0.0.0.0:7474".to_string()).clone();
-    let log_level = config.get("LOG_LEVEL").unwrap_or(&"DEBUG".to_string()).clone();
-    
-    let cert_privkey_path = config.get("TLS_CERTIFICATE_PRIVKEY_PATH")
-        .expect("TLS_CERTIFICATE_PRIVKEY_PATH required");
-    let cert_fullchain_path = config.get("TLS_CERTIFICATE_FULLCHAIN_PATH")
-        .expect("TLS_CERTIFICATE_FULLCHAIN_PATH required");
-    
-    let config_dir = config.get("CONFIG_DIR")
-        .expect("CONFIG_DIR required");
-    let allowed_secrets_str = config.get("ALLOWED_SECRETS")
-        .expect("ALLOWED_SECRETS required");
+    let bind_addr = config.get("VAULT_BIND_ADDR").unwrap_or(&"0.0.0.0:7474".to_string()).clone();
+    let cert_privkey_path = config.get("VAULT_TLS_PRIVKEY_PATH")
+        .expect("VAULT_TLS_PRIVKEY_PATH required");
+    let cert_fullchain_path = config.get("VAULT_TLS_FULLCHAIN_PATH")
+        .expect("VAULT_TLS_FULLCHAIN_PATH required");
+    let config_dir = config.get("VAULT_CONFIG_DIR")
+        .expect("VAULT_CONFIG_DIR required");
+    let allowed_secrets_str = config.get("VAULT_ALLOWED_SECRETS")
+        .expect("VAULT_ALLOWED_SECRETS required");
     let default_rate_limit = "60".to_string();
-    let rate_limit_str = config.get("RATE_LIMIT_REQUESTS_PER_MINUTE")
+    let rate_limit_str = config.get("VAULT_RATE_LIMIT_PER_MIN")
         .unwrap_or(&default_rate_limit);
+    let server_name = config.get("VAULT_SERVER_NAME")
+        .unwrap_or(&"shrmpl-vault".to_string()).clone();
 
-    // Logging configuration
+    // Logger config (SLOG_* prefix shared across all servers)
     let slog_dest = config.get("SLOG_DEST").unwrap_or(&"".to_string()).clone();
-    let server_name = config.get("SERVER_NAME").unwrap_or(&"shrmpl-vault".to_string()).clone();
-    let send_log = config.get("SEND_LOG").map(|s| s.parse().unwrap_or(true)).unwrap_or(true);
-    let log_console = config.get("LOG_CONSOLE").map(|s| s.parse().unwrap_or(true)).unwrap_or(true);
-    let send_actv = config.get("SEND_ACTV").map(|s| s.parse().unwrap_or(false)).unwrap_or(false);
+    let log_level = config.get("SLOG_LEVEL").unwrap_or(&"DEBUG".to_string()).clone();
+    let send_log = config.get("SLOG_SEND_LOG").map(|s| s.parse().unwrap_or(true)).unwrap_or(true);
+    let log_console = config.get("SLOG_CONSOLE").map(|s| s.parse().unwrap_or(true)).unwrap_or(true);
+    let send_actv = config.get("SLOG_SEND_ACTV").map(|s| s.parse().unwrap_or(false)).unwrap_or(false);
 
     // Parse allowed secrets
     let allowed_secrets: HashSet<String> = allowed_secrets_str
@@ -318,6 +317,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         send_actv,
         send_log,
     );
+    logger.check_connectivity().await;
 
     // Create vault state
     let state = VaultState {
@@ -336,8 +336,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mtls_client_ca_cert_path = config
-        .get("MTLS_CLIENT_CA_CERT_PATH")
-        .expect("MTLS_CLIENT_CA_CERT_PATH required");
+        .get("VAULT_MTLS_CA_CERT_PATH")
+        .expect("VAULT_MTLS_CA_CERT_PATH required");
 
     // Load TLS certificates
     let tls_config =

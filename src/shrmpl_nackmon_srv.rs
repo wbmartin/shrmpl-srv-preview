@@ -618,14 +618,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.parse().unwrap_or(true))
         .unwrap_or(true);
 
+    let server_name = config
+        .get("NACK_SERVER_NAME")
+        .cloned()
+        .unwrap_or_else(|| "shrmpl-nackmon".to_string());
+
     let logger = Logger::new(
         slog_dest,
-        "shrmpl-nackmon".to_string(),
+        server_name,
         shrmpl::shrmpl_log_client::LogLevel::from_str(&slog_level),
         slog_console,
         slog_send_actv,
         slog_send_log,
     );
+    logger.check_connectivity().await;
 
     // Load monitors
     println!("Loading monitors from {}...", monitors_dir);

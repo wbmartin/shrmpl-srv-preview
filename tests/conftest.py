@@ -96,13 +96,13 @@ def kv_server(tmp_path):
     write_env_file(
         config,
         {
-            "BIND_ADDR": f"127.0.0.1:{port}",
+            "KV_BIND_ADDR": f"127.0.0.1:{port}",
+            "KV_SERVER_NAME": "test-kv",
             "SLOG_DEST": "",
-            "SERVER_NAME": "test-kv",
-            "SEND_LOG": "false",
-            "LOG_LEVEL": "DEBUG",
-            "LOG_CONSOLE": "false",
-            "SEND_ACTV": "false",
+            "SLOG_LEVEL": "DEBUG",
+            "SLOG_CONSOLE": "false",
+            "SLOG_SEND_ACTV": "false",
+            "SLOG_SEND_LOG": "false",
         },
     )
     srv = ServerProcess(
@@ -126,8 +126,8 @@ def log_server(tmp_path):
     write_env_file(
         config,
         {
-            "BIND_ADDR": f"127.0.0.1:{port}",
-            "DATA_DIR": data_dir,
+            "LOGD_BIND_ADDR": f"127.0.0.1:{port}",
+            "LOGD_DATA_DIR": data_dir,
         },
     )
     srv = ServerProcess(

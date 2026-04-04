@@ -261,14 +261,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let map = config::load_config(&config_path);
     let config = Config {
-        data_dir: map.get("DATA_DIR").ok_or("DATA_DIR missing")?.clone(),
-        bind_addr: map.get("BIND_ADDR").ok_or("BIND_ADDR missing")?.clone(),
+        data_dir: map.get("LOGD_DATA_DIR").ok_or("LOGD_DATA_DIR missing")?.clone(),
+        bind_addr: map.get("LOGD_BIND_ADDR").ok_or("LOGD_BIND_ADDR missing")?.clone(),
         dev_mode: map
-            .get("DEV_MODE")
+            .get("LOGD_DEV_MODE")
             .map(|s| s.parse().unwrap_or(false))
             .unwrap_or(false),
         queue_capacity: map
-            .get("QUEUE_CAPACITY")
+            .get("LOGD_QUEUE_CAPACITY")
             .map(|s| s.parse().unwrap_or(10000))
             .unwrap_or(10000),
     };

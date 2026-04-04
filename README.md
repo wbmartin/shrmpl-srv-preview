@@ -70,6 +70,36 @@ curl -k "https://localhost:7474/my-config?secret=dev-secret-key"
 
 ---
 
+### 🔄 shrmpl-cicd
+**CI/CD webhook runner** - Receives webhooks and executes deployment scripts
+
+```bash
+# Start CICD server
+./shrmpl-cicd-srv etc/cicd-dev.env
+
+# Trigger via webhook
+curl -X POST -H "X-Hook-Secret: my-secret" http://localhost:8080/hook/deadbeef
+```
+
+**Features:** GitHub/Azure DevOps/generic webhooks • HMAC validation • Script execution with timeout • Slack notifications • Deduplication
+
+---
+
+### 🔔 shrmpl-nackmon
+**Negative acknowledgment monitor** - Watches for scheduled check-ins, alerts on misses
+
+```bash
+# Start nackmon server
+./shrmpl-nackmon-srv etc/shrmpl-nackmon-srv-loc.env
+
+# Services check in after completing their work
+curl http://localhost:7575/checkin?code=BKUP2024
+```
+
+**Features:** Cron-based scheduling • Configurable wait windows • Slack alerts with escalation • GUID-protected status endpoint
+
+---
+
 ## 🎯 The Shrmpl Philosophy
 
 | Traditional Approach | Shrmpl Approach |
@@ -110,6 +140,8 @@ cargo build --release
 ./bin/105-run-shrmpl-kv-dev
 ./bin/205-run-shrmpl-log-dev
 ./bin/305-run-shrmpl-vault-dev
+./bin/405-run-shrmpl-cicd-dev
+./bin/505-run-shrmpl-nackmon-dev
 ```
 
 ### Pre-built Binaries

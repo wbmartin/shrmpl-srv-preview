@@ -62,30 +62,30 @@ async fn main() {
     // Config loading uses expect() because missing critical config values should cause
     // immediate server failure - these are not recoverable runtime errors
     let config = config::load_config(config_path);
-    let send_log = config.get("SEND_LOG").map(|s| s == "true").unwrap_or(false);
     // Critical configuration values use expect() - server cannot function without these
     let bind_addr = config
-        .get("BIND_ADDR")
-        .expect("BIND_ADDR not found in config")
+        .get("KV_BIND_ADDR")
+        .expect("KV_BIND_ADDR required")
         .clone();
-    let slog_dest = config.get("SLOG_DEST").cloned().unwrap_or_default();
     let server_name = config
-        .get("SERVER_NAME")
+        .get("KV_SERVER_NAME")
         .cloned()
-        .unwrap_or_else(|| "skv-srv".to_string());
+        .unwrap_or_else(|| "shrmpl-kv".to_string());
 
-    // Load new logging configuration
+    // Logger config (SLOG_* prefix shared across all servers)
+    let slog_dest = config.get("SLOG_DEST").cloned().unwrap_or_default();
     let log_level = shrmpl_log_client::LogLevel::from_str(
-        config.get("LOG_LEVEL").map_or("INFO", |v| v.as_str()),
+        config.get("SLOG_LEVEL").map_or("INFO", |v| v.as_str()),
     );
     let log_console = config
-        .get("LOG_CONSOLE")
+        .get("SLOG_CONSOLE")
         .map(|s| s == "true")
         .unwrap_or(true);
     let send_actv = config
-        .get("SEND_ACTV")
+        .get("SLOG_SEND_ACTV")
         .map(|s| s == "true")
         .unwrap_or(false);
+    let send_log = config.get("SLOG_SEND_LOG").map(|s| s == "true").unwrap_or(false);
 
     let logger = shrmpl_log_client::Logger::new(
         slog_dest,
@@ -95,10 +95,11 @@ async fn main() {
         send_actv,
         send_log,
     );
+    logger.check_connectivity().await;
     let addr_parts: Vec<&str> = bind_addr.split(':').collect();
     if addr_parts.len() != 2 {
         logger
-            .error("KVINVALIDBND", "Invalid BIND_ADDR format")
+            .error("KVINVALIDBND", "Invalid KV_BIND_ADDR format")
             .await;
         std::process::exit(1);
     }

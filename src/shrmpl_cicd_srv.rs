@@ -988,14 +988,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|s| s.parse().unwrap_or(true))
         .unwrap_or(true);
 
+    let server_name = config
+        .get("CICD_SERVER_NAME")
+        .cloned()
+        .unwrap_or_else(|| "shrmpl-cicd".to_string());
+
     let logger = Logger::new(
         slog_dest,
-        "shrmpl-cicd".to_string(),
+        server_name,
         shrmpl::shrmpl_log_client::LogLevel::from_str(&slog_level),
         slog_console,
         slog_send_actv,
         slog_send_log,
     );
+    logger.check_connectivity().await;
 
     // Load hooks
     println!("Loading hooks from {}...", hooks_dir);

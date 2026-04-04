@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo "Running shrmpl e2e tests..."
+
+cd "$PROJECT_DIR"
+python3 -m pytest tests/ -v

@@ -419,9 +419,9 @@ async fn process_command(
     store: &KvStore,
     logger: &shrmpl_log_client::Logger,
 ) -> String {
-    let result = if line.starts_with("BATCH ") {
+    let result = if line.starts_with("BATCH ") && line.len() > 6 {
         let batch_commands = &line[6..]; // Skip "BATCH "
-        let commands: Vec<&str> = batch_commands.split(';').collect();
+        let commands: Vec<&str> = batch_commands.split(';').take(10).collect();
         if commands.len() > 3 {
             "ERROR too many commands\n".to_string()
         } else {

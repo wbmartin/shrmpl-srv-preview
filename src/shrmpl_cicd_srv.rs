@@ -17,6 +17,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio_rustls::TlsAcceptor;
 
+use base64::Engine;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
@@ -90,11 +91,11 @@ async fn handle_request(
 
     match (&method, path.as_str()) {
         (&Method::GET, "/health") => handle_health(&state).await,
-        (&Method::GET, p) if p.starts_with("/status/") => {
+        (&Method::GET, p) if p.starts_with("/status/") && p.len() > 8 => {
             let guid = &p[8..];
             handle_status(guid, &state).await
         }
-        (&Method::POST, p) if p.starts_with("/hook/") => {
+        (&Method::POST, p) if p.starts_with("/hook/") && p.len() > 6 => {
             let guid = p[6..].to_string();
             handle_hook(req, guid, state).await
         }
@@ -393,30 +394,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn base64_encode(input: &str) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = input.as_bytes();
-    let mut result = String::new();
-    let mut i = 0;
-    while i < bytes.len() {
-        let b0 = bytes[i] as u32;
-        let b1 = if i + 1 < bytes.len() { bytes[i + 1] as u32 } else { 0 };
-        let b2 = if i + 2 < bytes.len() { bytes[i + 2] as u32 } else { 0 };
-        let triple = (b0 << 16) | (b1 << 8) | b2;
-        result.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
-        result.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-        if i + 1 < bytes.len() {
-            result.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        if i + 2 < bytes.len() {
-            result.push(CHARS[(triple & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-        i += 3;
-    }
-    result
+    base64::engine::general_purpose::STANDARD.encode(input.as_bytes())
 }
 
 // --- Payload extraction ---
@@ -502,9 +480,11 @@ fn sha256_hex(data: &[u8]) -> String {
 /// Minimal JSON string extractor — finds `"key":"value"` in flat JSON.
 /// Not a full parser; sufficient for webhook payloads.
 fn json_extract_string(json: &str, key: &str) -> Option<String> {
+    // Cap input to prevent unbounded processing
+    let json = if json.len() > 1_048_576 { &json[..1_048_576] } else { json };
     let pattern = format!(r#""{}""#, key);
     let idx = json.find(&pattern)?;
-    let after_key = &json[idx + pattern.len()..];
+    let after_key = json.get(idx + pattern.len()..)?;
     // skip optional whitespace and colon
     let after_colon = after_key.trim_start();
     let after_colon = after_colon.strip_prefix(':')?;
@@ -512,10 +492,15 @@ fn json_extract_string(json: &str, key: &str) -> Option<String> {
     if !after_colon.starts_with('"') {
         return None;
     }
-    let value_start = &after_colon[1..];
+    let value_start = after_colon.get(1..)?;
     let mut result = String::new();
     let mut chars = value_start.chars();
+    // Cap extracted value length
+    let max_value_len = 4096;
     loop {
+        if result.len() >= max_value_len {
+            break;
+        }
         match chars.next() {
             Some('\\') => {
                 if let Some(c) = chars.next() {

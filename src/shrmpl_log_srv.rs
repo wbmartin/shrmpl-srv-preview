@@ -220,10 +220,12 @@ fn writer_loop(rx: Receiver<Record>, file_prefix: &str, data_dir: &str, counter:
 }
 
 fn open_file(data_dir: &str, prefix: &str, date: &str) -> BufWriter<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
     let path = format!("{}/{}-{}.log", data_dir, prefix, date);
     let file = fs::OpenOptions::new()
         .create(true)
         .append(true)
+        .mode(0o640)
         .open(&path)
         .unwrap();
     BufWriter::new(file)

@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+CONFIG_FILE=/Users/brandon/Code/shrmpl-srv-preview/etc/shrmpl-nackmon-srv-loc.env
+
+echo "Building shrmpl-nackmon-srv for development (macOS)..."
+
+cargo build --bin shrmpl-nackmon-srv
+
+echo "Launching shrmpl-nackmon-srv with config $CONFIG_FILE..."
+
+./target/debug/shrmpl-nackmon-srv $CONFIG_FILE

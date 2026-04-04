@@ -1,6 +1,6 @@
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::BufReader;
 use std::net::SocketAddr;
@@ -54,7 +54,7 @@ impl RateLimiter {
 #[derive(Clone)]
 struct VaultState {
     config_dir: String,
-    allowed_secrets: Vec<String>,
+    allowed_secrets: HashSet<String>,
     rate_limiter: RateLimiter,
     logger: Logger,
 }
@@ -93,7 +93,8 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
 
     // Validate secret key
     if !state.allowed_secrets.contains(secret_key) {
-        let msg = format!("{} {} - Invalid secret key: {}", client_ip, uri, secret_key);
+        let redacted = if secret_key.len() >= 4 { &secret_key[..4] } else { secret_key };
+        let msg = format!("{} {} - Invalid secret key: {}****", client_ip, uri, redacted);
         warn!("{}", msg);
         state.logger.warn("AUTH", &msg).await;
         return Ok(Response::builder()
@@ -104,7 +105,8 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
 
     // Check rate limit
     if !state.rate_limiter.check_rate_limit(secret_key) {
-        let msg = format!("{} {} - Rate limit exceeded for secret: {}", client_ip, uri, secret_key);
+        let redacted = if secret_key.len() >= 4 { &secret_key[..4] } else { secret_key };
+        let msg = format!("{} {} - Rate limit exceeded for secret: {}****", client_ip, uri, redacted);
         warn!("{}", msg);
         state.logger.warn("RATELIMIT", &msg).await;
         return Ok(Response::builder()
@@ -118,8 +120,8 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
 
     // Extract filename from path (remove leading slash)
     let filename = match path.strip_prefix("/") {
-        Some(name) => name,
-        None => {
+        Some(name) if !name.is_empty() => name,
+        _ => {
             let msg = format!("{} {} - Invalid path format", client_ip, uri);
             warn!("{}", msg);
             state.logger.warn("HTTPERROR", &msg).await;
@@ -129,6 +131,17 @@ async fn handle_request(req: Request<Body>, state: VaultState) -> Result<Respons
                 .unwrap());
         }
     };
+
+    // Reject path traversal attempts
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        let msg = format!("{} {} - Path traversal attempt blocked", client_ip, uri);
+        warn!("{}", msg);
+        state.logger.warn("VAULTTRAV", &msg).await;
+        return Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from("Invalid path"))
+            .unwrap());
+    }
 
     // Construct full file path
     let file_path = format!("{}/{}", state.config_dir, filename);
@@ -176,7 +189,9 @@ fn get_client_ip(req: &Request<Body>) -> String {
 fn parse_query_params(query: Option<&str>) -> HashMap<String, String> {
     let mut params = HashMap::new();
     if let Some(query_str) = query {
-        for pair in query_str.split('&') {
+        // Cap query string processing to prevent DoS
+        let capped = if query_str.len() > 2048 { &query_str[..2048] } else { query_str };
+        for pair in capped.split('&').take(32) {
             if let Some((key, value)) = pair.split_once('=') {
                 params.insert(key.to_string(), value.to_string());
             }
@@ -264,7 +279,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let send_actv = config.get("SEND_ACTV").map(|s| s.parse().unwrap_or(false)).unwrap_or(false);
 
     // Parse allowed secrets
-    let allowed_secrets: Vec<String> = allowed_secrets_str
+    let allowed_secrets: HashSet<String> = allowed_secrets_str
         .split(',')
         .map(|s| s.trim().to_string())
         .collect();

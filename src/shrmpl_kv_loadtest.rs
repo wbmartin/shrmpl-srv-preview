@@ -171,12 +171,10 @@ async fn run_task_operations(
         let final_success = match batch_result {
             Ok(Ok(_)) => operation_success,
             Ok(Err(e)) => {
-                operation_success = false;
                 operation_error = Some(format!("Batch GET failed: {}", e));
                 false
             }
             Err(_) => {
-                operation_success = false;
                 operation_error = Some("Batch GET timeout".to_string());
                 false
             }

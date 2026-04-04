@@ -26,6 +26,8 @@ rustls-pemfile = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 hmac = "0.12"
 sha2 = "0.10"
+croner = "2"
+base64 = "0.22"
 
 [[bin]]
 name = "shrmpl-kv-srv"
@@ -54,3 +56,7 @@ path = "src/shrmpl_kv_loadtest.rs"
 [[bin]]
 name = "shrmpl-cicd-srv"
 path = "src/shrmpl_cicd_srv.rs"
+
+[[bin]]
+name = "shrmpl-nackmon-srv"
+path = "src/shrmpl_nackmon_srv.rs"

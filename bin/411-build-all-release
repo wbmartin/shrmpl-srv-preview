@@ -1,0 +1,59 @@
+#!/bin/bash
+
+set -e
+
+# Get project directory (parent of bin)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Detect platform
+OS="$(uname -s)"
+case "$OS" in
+  Linux)  DIST_DIR="$PROJECT_DIR/dist/linux" ;;
+  Darwin) DIST_DIR="$PROJECT_DIR/dist/mac" ;;
+  *)
+    echo "Error: Unsupported platform: $OS"
+    exit 1
+    ;;
+esac
+
+# Check prerequisites
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "Error: Rust/Cargo is not installed."
+  echo "Install via: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+  exit 1
+fi
+
+if [[ "$OS" == "Linux" ]] && ! command -v cc >/dev/null 2>&1; then
+  echo "Error: GCC (cc) not found, required for linking."
+  echo "Install with: apt update && apt install build-essential"
+  exit 1
+fi
+
+echo "Building all binaries for $OS..."
+
+mkdir -p "$DIST_DIR"
+cd "$PROJECT_DIR"
+
+cargo build --release --bins
+
+# All binaries to copy (excluding loadtest)
+BINARIES=(
+  shrmpl-kv-srv
+  shrmpl-kv-cli
+  shrmpl-log-srv
+  shrmpl-vault-srv
+  shrmpl-vault-cli
+  shrmpl-cicd-srv
+  shrmpl-nackmon-srv
+)
+
+for bin in "${BINARIES[@]}"; do
+  cp "$PROJECT_DIR/target/release/$bin" "$DIST_DIR/"
+done
+
+echo ""
+echo "Build complete. Binaries:"
+ls -lh "$DIST_DIR/"
+echo ""
+echo "Output: $DIST_DIR"

@@ -96,11 +96,15 @@ WantedBy=multi-user.target
 ```
 
 ```
+chmod 766 /srv/shrmpl/log # things have to be writable, but not executable
 systemctl daemon-reload
 systemctl start shrmpl-log-central
 systemctl enable shrmpl-log-central
 journalctl -u shrmpl-log-central -f
 ```
+
+
+## KV
 ```
 vi /srv/shrmpl/etc/shrmpl-kv-srv-central.env
 ```
@@ -128,5 +132,19 @@ systemctl daemon-reload
 systemctl start shrmpl-kv-central
 systemctl enable shrmpl-kv-central
 journalctl -u shrmpl-kv-central -f
+
+```
+
+# Building on the server
+Had to run this so root can run the build inside the wbmartin home dir (as root)
+```
+ git config --global --add safe.directory /home/wbmartin/shrmpl-srv-preview
+```
+
+normal build flow
+```
+su -
+cd /home/wbmartin/shrmpl-srv-preview
+./_buildandpublish
 
 ```

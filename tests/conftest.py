@@ -176,6 +176,7 @@ def cicd_server(tmp_path):
             "CICD_HOOKS_DIR": hooks_dir,
             "CICD_MAX_CONCURRENT": "4",
             "CICD_DEFAULT_TIMEOUT": "30",
+            "CICD_SERVER_NAME": "test-cicd",
             "SLOG_DEST": "",
             "SLOG_LEVEL": "DEBUG",
             "SLOG_CONSOLE": "false",
@@ -201,14 +202,15 @@ def nackmon_server(tmp_path):
     monitors_dir = str(tmp_path / "monitors")
     os.makedirs(monitors_dir, exist_ok=True)
 
-    # Create a test monitor (every minute, 30 min wait)
+    # Create a test monitor (every minute, 30 min grace)
     monitor_config = os.path.join(monitors_dir, "test-job-TESTCODE.env")
     write_env_file(
         monitor_config,
         {
             "NACK_CRON": "* * * * *",
             "NACK_DESCRIPTION": "Test monitor for e2e",
-            "NACK_WAIT_MIN": "30",
+            "NACK_GRACE_MIN": "30",
+            "NACK_ESCALATION_GRACE_MIN": "60",
         },
     )
 
@@ -220,8 +222,6 @@ def nackmon_server(tmp_path):
             "NACK_LISTEN_ADDR": "127.0.0.1",
             "NACK_LISTEN_PORT": str(port),
             "NACK_MONITORS_DIR": monitors_dir,
-            "NACK_ESCALATION_MISSES": "3",
-            "NACK_ESCALATION_INTERVAL_MIN": "60",
             "NACK_STATUS_PATH": status_path,
             "SLOG_DEST": "",
             "SLOG_LEVEL": "DEBUG",
@@ -232,6 +232,102 @@ def nackmon_server(tmp_path):
     )
     srv = ServerProcess(
         os.path.join(TARGET_DIR, "shrmpl-nackmon-srv"), str(config), port
+    )
+    srv.status_path = status_path
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+# --- Pulsecheck Server ---
+
+
+@pytest.fixture
+def pulsecheck_server(tmp_path):
+    """Start a shrmpl-pulsecheck-srv instance on a random port.
+
+    Creates one endpoint that checks the server's own /health (self-referential).
+    """
+    port = find_free_port()
+    endpoints_dir = str(tmp_path / "endpoints")
+    os.makedirs(endpoints_dir, exist_ok=True)
+
+    # Endpoint that checks the server's own /health endpoint
+    endpoint_config = os.path.join(endpoints_dir, "self-check-SELFTST.env")
+    write_env_file(
+        endpoint_config,
+        {
+            "PULSE_URL": f"http://127.0.0.1:{port}/health",
+            "PULSE_INTERVAL_SEC": "5",
+            "PULSE_EXPECT_STATUS": "200",
+            "PULSE_ESCALATION_MIN": "1",
+        },
+    )
+
+    status_path = "/status/e2e-pulse-test-guid"
+    config = tmp_path / "pulsecheck.env"
+    write_env_file(
+        config,
+        {
+            "PULSE_LISTEN_ADDR": "127.0.0.1",
+            "PULSE_LISTEN_PORT": str(port),
+            "PULSE_ENDPOINTS_DIR": endpoints_dir,
+            "PULSE_STATUS_PATH": status_path,
+            "PULSE_SERVER_NAME": "test-pulsecheck",
+            "SLOG_DEST": "",
+            "SLOG_LEVEL": "DEBUG",
+            "SLOG_CONSOLE": "false",
+            "SLOG_SEND_ACTV": "false",
+            "SLOG_SEND_LOG": "false",
+        },
+    )
+    srv = ServerProcess(
+        os.path.join(TARGET_DIR, "shrmpl-pulsecheck-srv"), str(config), port
+    )
+    srv.status_path = status_path
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+@pytest.fixture
+def pulsecheck_server_with_dead_endpoint(tmp_path):
+    """Pulsecheck server with an endpoint pointing at a port nothing listens on."""
+    port = find_free_port()
+    dead_port = find_free_port()
+    endpoints_dir = str(tmp_path / "endpoints")
+    os.makedirs(endpoints_dir, exist_ok=True)
+
+    endpoint_config = os.path.join(endpoints_dir, "dead-target-DEADTST.env")
+    write_env_file(
+        endpoint_config,
+        {
+            "PULSE_URL": f"http://127.0.0.1:{dead_port}/health",
+            "PULSE_INTERVAL_SEC": "5",
+            "PULSE_EXPECT_STATUS": "200",
+            "PULSE_ESCALATION_MIN": "1",
+        },
+    )
+
+    status_path = "/status/e2e-pulse-dead-guid"
+    config = tmp_path / "pulsecheck.env"
+    write_env_file(
+        config,
+        {
+            "PULSE_LISTEN_ADDR": "127.0.0.1",
+            "PULSE_LISTEN_PORT": str(port),
+            "PULSE_ENDPOINTS_DIR": endpoints_dir,
+            "PULSE_STATUS_PATH": status_path,
+            "PULSE_SERVER_NAME": "test-pulsecheck-dead",
+            "SLOG_DEST": "",
+            "SLOG_LEVEL": "DEBUG",
+            "SLOG_CONSOLE": "false",
+            "SLOG_SEND_ACTV": "false",
+            "SLOG_SEND_LOG": "false",
+        },
+    )
+    srv = ServerProcess(
+        os.path.join(TARGET_DIR, "shrmpl-pulsecheck-srv"), str(config), port
     )
     srv.status_path = status_path
     srv.start()

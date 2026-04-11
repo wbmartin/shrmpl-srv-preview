@@ -1039,6 +1039,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "rustls",
+ "rustls-native-certs",
  "rustls-pemfile",
  "sha2",
  "socket2 0.5.10",

@@ -96,7 +96,8 @@ WantedBy=multi-user.target
 ```
 
 ```
-chmod 766 /srv/shrmpl/log # things have to be writable, but not executable
+chmod 775 /srv/shrmpl/log # things have to be writable, but not executable
+chown shrmpl:shrmpl /srv/shrmpl/log
 systemctl daemon-reload
 systemctl start shrmpl-log-central
 systemctl enable shrmpl-log-central

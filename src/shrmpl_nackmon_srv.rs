@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 use croner::Cron;
@@ -23,9 +22,8 @@ struct ServerConfig {
     listen_addr: String,
     listen_port: u16,
     monitors_dir: String,
-    default_escalation_misses: u32,
-    default_escalation_interval_min: u64,
     status_path: String,
+    server_name: String,
 }
 
 #[derive(Clone)]
@@ -35,18 +33,17 @@ struct MonitorConfig {
     name: String,
     description: String,
     cron_expr: String,
-    wait_min: u64,
+    grace_min: u64,
     slack_webhook: Option<String>,
-    escalation_misses: u32,
-    escalation_interval_min: u64,
+    slack_message: Option<String>,
+    escalation_grace_min: u64,
 }
 
 #[derive(Clone)]
 struct MonitorState {
-    consecutive_misses: u32,
+    alert_count: u32,
     last_checkin: Option<DateTime<Utc>>,
     last_alert: Option<DateTime<Utc>>,
-    window_open_since: Option<DateTime<Utc>>,
 }
 
 #[allow(dead_code)]
@@ -54,7 +51,7 @@ struct AppState {
     config: ServerConfig,
     monitors: HashMap<String, MonitorConfig>,
     monitor_states: Mutex<HashMap<String, MonitorState>>,
-    start_time: Instant,
+    start_time: DateTime<Utc>,
     logger: Logger,
 }
 
@@ -71,6 +68,7 @@ async fn handle_request(
     match (&method, path.as_str()) {
         (&Method::GET, "/health") => handle_health(&state).await,
         (&Method::GET, "/checkin") => handle_checkin(&query, &state).await,
+        (&Method::GET, "/ack") => handle_ack(&query, &state).await,
         (&Method::GET, p) if p == state.config.status_path => handle_status(&state).await,
         _ => Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
@@ -80,7 +78,7 @@ async fn handle_request(
 }
 
 async fn handle_health(state: &AppState) -> Result<Response<Body>, hyper::Error> {
-    let uptime = state.start_time.elapsed().as_secs();
+    let uptime = (Utc::now() - state.start_time).num_seconds().max(0) as u64;
     let body = format!(
         r#"{{"status":"ok","monitors_loaded":{},"uptime_seconds":{}}}"#,
         state.monitors.len(),
@@ -93,8 +91,9 @@ async fn handle_health(state: &AppState) -> Result<Response<Body>, hyper::Error>
         .unwrap())
 }
 
-async fn handle_checkin(query: &str, state: &AppState) -> Result<Response<Body>, hyper::Error> {
-    // Cap query string processing to prevent DoS
+/// Parse and validate the `code` query parameter. Returns the code string
+/// or an HTTP error response.
+fn parse_code_param(query: &str) -> Result<String, Response<Body>> {
     let query = if query.len() > 2048 { &query[..2048] } else { query };
     let code = query
         .split('&')
@@ -107,20 +106,23 @@ async fn handle_checkin(query: &str, state: &AppState) -> Result<Response<Body>,
             }
         });
 
-    let code = match code {
-        Some(c) if c.len() >= 4 && c.len() <= 25 => c,
-        Some(_) => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(r#"{"error":"code must be 4-25 characters"}"#))
-                .unwrap());
-        }
-        None => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(Body::from(r#"{"error":"missing code parameter"}"#))
-                .unwrap());
-        }
+    match code {
+        Some(c) if c.len() >= 4 && c.len() <= 25 => Ok(c),
+        Some(_) => Err(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(r#"{"error":"code must be 4-25 characters"}"#))
+            .unwrap()),
+        None => Err(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from(r#"{"error":"missing code parameter"}"#))
+            .unwrap()),
+    }
+}
+
+async fn handle_checkin(query: &str, state: &AppState) -> Result<Response<Body>, hyper::Error> {
+    let code = match parse_code_param(query) {
+        Ok(c) => c,
+        Err(resp) => return Ok(resp),
     };
 
     if !state.monitors.contains_key(&code) {
@@ -135,15 +137,14 @@ async fn handle_checkin(query: &str, state: &AppState) -> Result<Response<Body>,
 
     let mut states = state.monitor_states.lock().await;
     let ms = states.entry(code.clone()).or_insert(MonitorState {
-        consecutive_misses: 0,
+        alert_count: 0,
         last_checkin: None,
         last_alert: None,
-        window_open_since: None,
     });
 
+    let had_active_alarm = ms.alert_count > 0;
     ms.last_checkin = Some(now);
-    ms.consecutive_misses = 0;
-    ms.window_open_since = None;
+    ms.alert_count = 0;
 
     state
         .logger
@@ -153,10 +154,89 @@ async fn handle_checkin(query: &str, state: &AppState) -> Result<Response<Body>,
         )
         .await;
 
+    // Notify Slack that the alarm has cleared
+    if had_active_alarm {
+        if let Some(ref url) = monitor.slack_webhook {
+            let suffix = monitor
+                .slack_message
+                .as_deref()
+                .map(|m| format!(" {}", m))
+                .unwrap_or_default();
+            let msg = format!(
+                ":white_check_mark: [{}] `{}` (code={}) checked in — alarm cleared.{}",
+                state.config.server_name, monitor.name, code, suffix
+            );
+            send_slack(url, &msg, &state.logger).await;
+        }
+    }
+
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/json")
         .body(Body::from(r#"{"status":"ok"}"#))
+        .unwrap())
+}
+
+async fn handle_ack(query: &str, state: &AppState) -> Result<Response<Body>, hyper::Error> {
+    let code = match parse_code_param(query) {
+        Ok(c) => c,
+        Err(resp) => return Ok(resp),
+    };
+
+    if !state.monitors.contains_key(&code) {
+        return Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from(r#"{"error":"unknown code"}"#))
+            .unwrap());
+    }
+
+    let monitor = &state.monitors[&code];
+    let now = Utc::now();
+
+    let mut states = state.monitor_states.lock().await;
+    let ms = states.entry(code.clone()).or_insert(MonitorState {
+        alert_count: 0,
+        last_checkin: None,
+        last_alert: None,
+    });
+
+    let had_active_alarm = ms.alert_count > 0;
+    ms.last_checkin = Some(now);
+    ms.alert_count = 0;
+
+    state
+        .logger
+        .info(
+            "NACKACK",
+            &format!("Alarm acknowledged: code={} name={}", code, monitor.name),
+        )
+        .await;
+
+    if had_active_alarm {
+        if let Some(ref url) = monitor.slack_webhook {
+            let suffix = monitor
+                .slack_message
+                .as_deref()
+                .map(|m| format!(" {}", m))
+                .unwrap_or_default();
+            let msg = format!(
+                ":no_bell: [{}] `{}` (code={}) alarm silenced by operator.{}",
+                state.config.server_name, monitor.name, code, suffix
+            );
+            send_slack(url, &msg, &state.logger).await;
+        }
+    }
+
+    let body = if had_active_alarm {
+        r#"{"status":"acknowledged"}"#
+    } else {
+        r#"{"status":"no active alarm"}"#
+    };
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", "application/json")
+        .body(Body::from(body))
         .unwrap())
 }
 
@@ -166,14 +246,14 @@ async fn handle_status(state: &AppState) -> Result<Response<Body>, hyper::Error>
 
     for (code, monitor) in &state.monitors {
         let ms = states.get(code);
-        let misses = ms.map(|s| s.consecutive_misses).unwrap_or(0);
+        let misses = ms.map(|s| s.alert_count).unwrap_or(0);
         let last_checkin = ms
             .and_then(|s| s.last_checkin)
             .map(|t| format!("\"{}\"", t.format("%Y-%m-%dT%H:%M:%SZ")))
             .unwrap_or_else(|| "null".to_string());
 
         entries.push(format!(
-            r#"{{"code":"{}","name":"{}","description":"{}","consecutive_misses":{},"last_checkin":{}}}"#,
+            r#"{{"code":"{}","name":"{}","description":"{}","alert_count":{},"last_checkin":{}}}"#,
             code, monitor.name, monitor.description, misses, last_checkin
         ));
     }
@@ -269,8 +349,8 @@ async fn send_slack(webhook_url: &str, message: &str, logger: &Logger) {
 // --- Monitor scheduler ---
 
 async fn run_scheduler(state: Arc<AppState>) {
-    // Tick every 30 seconds to check schedules
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+    // Tick every 60 seconds
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
 
     loop {
         interval.tick().await;
@@ -293,118 +373,87 @@ async fn run_scheduler(state: Arc<AppState>) {
 
             let mut states = state.monitor_states.lock().await;
             let ms = states.entry(code.clone()).or_insert(MonitorState {
-                consecutive_misses: 0,
+                alert_count: 0,
                 last_checkin: None,
                 last_alert: None,
-                window_open_since: None,
             });
 
-            // Find the most recent scheduled time before now
-            // We look back up to 24 hours to find the last expected run
+            // Find the most recent cron time whose grace period has expired.
+            let grace = chrono::Duration::minutes(monitor.grace_min as i64);
             let lookback = now - chrono::Duration::hours(24);
-            let last_scheduled = find_last_scheduled(&cron, lookback, now);
-
-            let last_scheduled = match last_scheduled {
+            let last_scheduled = match find_last_scheduled(&cron, lookback, now - grace) {
                 Some(t) => t,
                 None => continue,
             };
 
-            // Calculate the deadline: scheduled time + wait window
-            let deadline =
-                last_scheduled + chrono::Duration::minutes(monitor.wait_min as i64);
-
-            // If we haven't passed the deadline yet, check if we should open a window
-            if now < deadline {
-                if ms.window_open_since.is_none() {
-                    // Check if this is a new window (last checkin was before this scheduled time)
-                    let needs_window = ms
-                        .last_checkin
-                        .map(|lc| lc < last_scheduled)
-                        .unwrap_or(true);
-                    if needs_window {
-                        ms.window_open_since = Some(last_scheduled);
-                        state
-                            .logger
-                            .debug(
-                                "NACKWIND",
-                                &format!(
-                                    "Wait window opened: code={} scheduled={} deadline={}",
-                                    code,
-                                    last_scheduled.format("%H:%M:%S"),
-                                    deadline.format("%H:%M:%S")
-                                ),
-                            )
-                            .await;
-                    }
-                }
+            // Only alert for deadlines that passed after this instance started.
+            if last_scheduled + grace < state.start_time {
                 continue;
             }
 
-            // Check if a valid checkin arrived since the scheduled time
+            // Did a valid checkin arrive since the scheduled time?
             let checkin_ok = ms
                 .last_checkin
                 .map(|lc| lc >= last_scheduled)
                 .unwrap_or(false);
 
             if checkin_ok {
-                // All good — reset window
-                if ms.window_open_since.is_some() {
-                    ms.window_open_since = None;
-                    ms.consecutive_misses = 0;
-                }
+                ms.alert_count = 0;
                 continue;
             }
 
-            // We have a miss. Ensure window is tracked.
-            if ms.window_open_since != Some(last_scheduled) {
-                ms.window_open_since = Some(last_scheduled);
-            }
-
-            // Determine if we should send an alert now.
-            // Alert on first miss detection, then repeat every escalation_interval_min.
-            let interval_dur =
-                chrono::Duration::minutes(monitor.escalation_interval_min as i64);
+            // We have a miss. First alert fires immediately.
+            // Subsequent alerts (escalations) throttle by escalation_grace_min.
             let should_alert = match ms.last_alert {
                 None => true,
-                Some(la) if la < last_scheduled => true, // new window, haven't alerted yet
-                Some(la) => now - la >= interval_dur,     // repeat on interval
+                Some(la) => {
+                    let throttle = if ms.alert_count == 0 {
+                        grace
+                    } else {
+                        chrono::Duration::minutes(monitor.escalation_grace_min as i64)
+                    };
+                    now - la >= throttle
+                }
             };
 
             if !should_alert {
                 continue;
             }
 
-            ms.consecutive_misses += 1;
+            ms.alert_count += 1;
             ms.last_alert = Some(now);
 
-            let is_escalated = ms.consecutive_misses >= monitor.escalation_misses;
+            let is_escalated = ms.alert_count > 1;
+            let label = if is_escalated { "ESCALATION" } else { "MISS" };
+            let log_code = if is_escalated { "NACKESCL" } else { "NACKMISS" };
 
-            let miss_msg = format!(
-                "{}: code={} name={} alert_count={} scheduled={}",
-                if is_escalated { "ESCALATION" } else { "MISS" },
-                code,
-                monitor.name,
-                ms.consecutive_misses,
-                last_scheduled.format("%Y-%m-%dT%H:%M:%SZ")
-            );
             state
                 .logger
                 .warn(
-                    if is_escalated { "NACKESCL" } else { "NACKMISS" },
-                    &miss_msg,
+                    log_code,
+                    &format!(
+                        "{}: code={} name={} alert_count={} scheduled={}",
+                        label, code, monitor.name, ms.alert_count,
+                        last_scheduled.format("%Y-%m-%dT%H:%M:%SZ")
+                    ),
                 )
                 .await;
 
             if let Some(ref url) = monitor.slack_webhook {
+                let suffix = monitor
+                    .slack_message
+                    .as_deref()
+                    .map(|m| format!(" {}", m))
+                    .unwrap_or_default();
                 let slack_msg = if is_escalated {
                     format!(
-                        ":rotating_light: ESCALATION: `{}` missed check-in (alert #{}). {}",
-                        monitor.name, ms.consecutive_misses, monitor.description
+                        ":rotating_light: ESCALATION: [{}] `{}` (code={}) missed check-in (alert #{}). {}{}",
+                        state.config.server_name, monitor.name, code, ms.alert_count, monitor.description, suffix
                     )
                 } else {
                     format!(
-                        ":warning: `{}` missed check-in (alert #{}). {}",
-                        monitor.name, ms.consecutive_misses, monitor.description
+                        ":warning: [{}] `{}` (code={}) missed check-in. {}{}",
+                        state.config.server_name, monitor.name, code, monitor.description, suffix
                     )
                 };
                 send_slack(url, &slack_msg, &state.logger).await;
@@ -431,8 +480,6 @@ fn find_last_scheduled(cron: &Cron, start: DateTime<Utc>, end: DateTime<Utc>) ->
 
 fn load_monitors(
     monitors_dir: &str,
-    default_escalation_misses: u32,
-    default_escalation_interval_min: u64,
 ) -> HashMap<String, MonitorConfig> {
     let mut monitors = HashMap::new();
 
@@ -501,8 +548,8 @@ fn load_monitors(
             .cloned()
             .unwrap_or_else(|| name_part.clone());
 
-        let wait_min: u64 = env_vars
-            .get("NACK_WAIT_MIN")
+        let grace_min: u64 = env_vars
+            .get("NACK_GRACE_MIN")
             .and_then(|v| v.parse().ok())
             .unwrap_or(15);
 
@@ -511,15 +558,21 @@ fn load_monitors(
             .cloned()
             .filter(|s| !s.is_empty());
 
-        let escalation_misses: u32 = env_vars
-            .get("NACK_ESCALATION_MISSES")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(default_escalation_misses);
+        let slack_message = env_vars
+            .get("NACK_SLACK_MESSAGE")
+            .cloned()
+            .filter(|s| !s.is_empty());
 
-        let escalation_interval_min: u64 = env_vars
-            .get("NACK_ESCALATION_INTERVAL_MIN")
+        let escalation_grace_min: u64 = match env_vars
+            .get("NACK_ESCALATION_GRACE_MIN")
             .and_then(|v| v.parse().ok())
-            .unwrap_or(default_escalation_interval_min);
+        {
+            Some(v) => v,
+            None => {
+                eprintln!("Skipping monitor {} — missing or invalid NACK_ESCALATION_GRACE_MIN", filename);
+                continue;
+            }
+        };
 
         if slack_webhook.is_none() {
             println!(
@@ -529,8 +582,8 @@ fn load_monitors(
         }
 
         println!(
-            "  Loaded monitor: {} (code={}, cron={}, wait={}min)",
-            name_part, code, cron_expr, wait_min
+            "  Loaded monitor: {} (code={}, cron={}, grace={}min, escalation={}min)",
+            name_part, code, cron_expr, grace_min, escalation_grace_min
         );
 
         monitors.insert(
@@ -540,10 +593,10 @@ fn load_monitors(
                 name: name_part,
                 description,
                 cron_expr,
-                wait_min,
+                grace_min,
                 slack_webhook,
-                escalation_misses,
-                escalation_interval_min,
+                slack_message,
+                escalation_grace_min,
             },
         );
     }
@@ -578,14 +631,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get("NACK_MONITORS_DIR")
         .expect("NACK_MONITORS_DIR required")
         .clone();
-    let default_escalation_misses: u32 = config
-        .get("NACK_ESCALATION_MISSES")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(3);
-    let default_escalation_interval_min: u64 = config
-        .get("NACK_ESCALATION_INTERVAL_MIN")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(60);
     let status_path = config
         .get("NACK_STATUS_PATH")
         .expect("NACK_STATUS_PATH required")
@@ -625,7 +670,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let logger = Logger::new(
         slog_dest,
-        server_name,
+        server_name.clone(),
         shrmpl::shrmpl_log_client::LogLevel::from_str(&slog_level),
         slog_console,
         slog_send_actv,
@@ -635,11 +680,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load monitors
     println!("Loading monitors from {}...", monitors_dir);
-    let monitors = load_monitors(
-        &monitors_dir,
-        default_escalation_misses,
-        default_escalation_interval_min,
-    );
+    let monitors = load_monitors(&monitors_dir);
 
     if monitors.is_empty() {
         eprintln!("Warning: no monitors loaded from {}", monitors_dir);
@@ -649,16 +690,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         listen_addr: listen_addr.clone(),
         listen_port,
         monitors_dir,
-        default_escalation_misses,
-        default_escalation_interval_min,
         status_path,
+        server_name,
     };
 
     let state = Arc::new(AppState {
         config: server_config,
         monitors,
         monitor_states: Mutex::new(HashMap::new()),
-        start_time: Instant::now(),
+        start_time: Utc::now(),
         logger: logger.clone(),
     });
 
@@ -685,8 +725,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .info(
                 "NACKLOAD",
                 &format!(
-                    "Monitor loaded: code={} name={} cron={} wait={}min",
-                    code, monitor.name, monitor.cron_expr, monitor.wait_min
+                    "Monitor loaded: code={} name={} cron={} grace={}min escalation={}min",
+                    code, monitor.name, monitor.cron_expr, monitor.grace_min, monitor.escalation_grace_min
                 ),
             )
             .await;

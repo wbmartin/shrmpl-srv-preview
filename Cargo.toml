@@ -28,6 +28,7 @@ hmac = "0.12"
 sha2 = "0.10"
 croner = "2"
 base64 = "0.22"
+rustls-native-certs = "0.6"
 
 [[bin]]
 name = "shrmpl-kv-srv"
@@ -60,3 +61,7 @@ path = "src/shrmpl_cicd_srv.rs"
 [[bin]]
 name = "shrmpl-nackmon-srv"
 path = "src/shrmpl_nackmon_srv.rs"
+
+[[bin]]
+name = "shrmpl-pulsecheck-srv"
+path = "src/shrmpl_pulsecheck_srv.rs"

@@ -28,6 +28,7 @@ struct Config {
     bind_addr: String,
     dev_mode: bool,
     queue_capacity: usize,
+    stats_interval_sec: u64,
 }
 
 struct Counters {
@@ -271,6 +272,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .get("LOGD_QUEUE_CAPACITY")
             .map(|s| s.parse().unwrap_or(10000))
             .unwrap_or(10000),
+        stats_interval_sec: map
+            .get("LOGD_STATS_INTERVAL_SEC")
+            .map(|s| s.parse().unwrap_or(60))
+            .unwrap_or(60),
     };
     std::fs::create_dir_all(&config.data_dir)?;
 
@@ -307,12 +312,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(signal_handler(counters.clone()));
 
+    let stats_interval_sec = config.stats_interval_sec;
     let start_time_clone = start_time;
     let counters_clone = counters.clone();
     let tx_misc_clone = tx_misc.clone();
     let keepalive_tx_clone = keepalive_tx.clone();
+    println!("Stats interval: {}s", stats_interval_sec);
     tokio::spawn(async move {
-        let mut interval = interval(Duration::from_secs(60));
+        let mut interval = interval(Duration::from_secs(stats_interval_sec));
         loop {
             interval.tick().await;
             let unix_millis = std::time::SystemTime::now()

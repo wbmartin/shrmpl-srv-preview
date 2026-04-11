@@ -63,7 +63,7 @@ class TestCheckin:
         assert status == 200
         data = json.loads(body)
         monitors = {m["code"]: m for m in data}
-        assert monitors["TESTCODE"]["consecutive_misses"] == 0
+        assert monitors["TESTCODE"]["alert_count"] == 0
         assert monitors["TESTCODE"]["last_checkin"] is not None
 
 
@@ -89,6 +89,25 @@ class TestStatusEndpoint:
         """GET /status without GUID should return 404."""
         status, body = http_get(nackmon_server.port, "/status")
         assert status == 404
+
+
+class TestAck:
+    def test_ack_known_code_no_alarm(self, nackmon_server):
+        """Ack with no active alarm should return 'no active alarm'."""
+        status, body = http_get(nackmon_server.port, "/ack?code=TESTCODE")
+        assert status == 200
+        data = json.loads(body)
+        assert data["status"] == "no active alarm"
+
+    def test_ack_unknown_code(self, nackmon_server):
+        """Ack with unknown code should return 404."""
+        status, body = http_get(nackmon_server.port, "/ack?code=NOPE1234")
+        assert status == 404
+
+    def test_ack_missing_code(self, nackmon_server):
+        """Ack without code param should return 400."""
+        status, body = http_get(nackmon_server.port, "/ack")
+        assert status == 400
 
 
 class TestUnknownRoutes:

@@ -38,11 +38,13 @@ struct ServerConfig {
     hooks_dir: String,
     max_concurrent: usize,
     default_timeout: u64,
+    server_name: String,
 }
 
 #[derive(Clone)]
 struct HookConfig {
     guid: String,
+    name: String,
     provider: String,
     secret: String,
     script: String,
@@ -618,8 +620,8 @@ async fn run_script(hook: &HookConfig, info: &WebhookInfo, state: &AppState) {
             format!(" branch={}", info.branch)
         };
         let msg = format!(
-            ":rocket: Pipeline started for `{}`{} (delivery={})",
-            hook.guid, branch_info, info.delivery_id
+            ":rocket: [{}] Pipeline started for `{}` ({}){} (delivery={})",
+            state.config.server_name, hook.name, hook.guid, branch_info, info.delivery_id
         );
         send_slack(url, &msg, &state.logger).await;
     }
@@ -744,8 +746,8 @@ async fn run_script(hook: &HookConfig, info: &WebhookInfo, state: &AppState) {
             (":x:", "failed")
         };
         let msg = format!(
-            "{} Pipeline {} for `{}` — exit_code={} duration={}s",
-            icon, status_word, hook.guid, result, duration
+            "{} [{}] Pipeline {} for `{}` ({}) — exit_code={} duration={}s",
+            icon, state.config.server_name, status_word, hook.name, hook.guid, result, duration
         );
         send_slack(url, &msg, &state.logger).await;
     }
@@ -840,8 +842,8 @@ fn load_hooks(
 
         // Extract GUID: everything after last '-' before '.env'
         let stem = filename.strip_suffix(".env").unwrap();
-        let guid = match stem.rsplit_once('-') {
-            Some((_, guid)) => guid.to_string(),
+        let (name_part, guid) = match stem.rsplit_once('-') {
+            Some((name, guid)) => (name.to_string(), guid.to_string()),
             None => {
                 eprintln!(
                     "{} Skipping hook file {} — no GUID in filename",
@@ -897,6 +899,7 @@ fn load_hooks(
 
         let hook = HookConfig {
             guid: guid.clone(),
+            name: name_part,
             provider,
             secret,
             script,
@@ -990,12 +993,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let server_name = config
         .get("CICD_SERVER_NAME")
-        .cloned()
-        .unwrap_or_else(|| "shrmpl-cicd".to_string());
+        .expect("CICD_SERVER_NAME required")
+        .clone();
 
     let logger = Logger::new(
         slog_dest,
-        server_name,
+        server_name.clone(),
         shrmpl::shrmpl_log_client::LogLevel::from_str(&slog_level),
         slog_console,
         slog_send_actv,
@@ -1020,6 +1023,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         hooks_dir,
         max_concurrent,
         default_timeout,
+        server_name,
     };
 
     let state = Arc::new(AppState {

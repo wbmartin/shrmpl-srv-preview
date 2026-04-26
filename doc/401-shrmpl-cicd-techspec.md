@@ -287,14 +287,14 @@ Everything else (`tokio`, `hyper`, `hyper-util`, `http-body-util`, `rustls`, `to
 
 ```
 bin/401-build-shrmpl-cicd-release   # cargo build --release
-bin/405-run-shrmpl-cicd-dev         # cargo run with etc/cicd-dev.env
+bin/405-run-shrmpl-cicd-dev         # cargo run with etc/shrmpl-cicd-srv-loc.env
 bin/415-test-webhook-github         # curl with computed HMAC signature
 ```
 
 ### Config files
 
 ```
-etc/cicd-dev.env                    # local dev (plain HTTP, localhost)
+etc/shrmpl-cicd-srv-loc.env                    # local dev (plain HTTP, localhost)
 etc/cicd-prod.env                   # production template
 etc/cicd-hooks/echo-test-deadbeef.env
 examples/scripts/echo-test.sh

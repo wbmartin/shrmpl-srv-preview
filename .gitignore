@@ -4,3 +4,4 @@
 .DS_Store
 examples/python/__pycache__
 /etc/cicd-hooks/echo-test-deadbeef.env
+/etc/nack-monitors/one-min-test-12345.env

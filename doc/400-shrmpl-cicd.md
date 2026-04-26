@@ -312,7 +312,7 @@ bin/
 
 ```bash
 ./bin/405-run-shrmpl-cicd-dev
-# Runs with etc/cicd-dev.env pointing to examples/hooks/
+# Runs with etc/shrmpl-cicd-srv-loc.env pointing to examples/hooks/
 ```
 
 ### Production (Linux)
@@ -329,7 +329,7 @@ cp dist/shrmpl-cicd-srv /usr/local/bin/
 
 ## Example Configs
 
-### etc/cicd-dev.env
+### etc/shrmpl-cicd-srv-loc.env
 
 ```bash
 CICD_TLS_MODE=plain

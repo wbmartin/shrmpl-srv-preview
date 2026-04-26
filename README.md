@@ -75,7 +75,7 @@ curl -k "https://localhost:7474/my-config?secret=dev-secret-key"
 
 ```bash
 # Start CICD server
-./shrmpl-cicd-srv etc/cicd-dev.env
+./shrmpl-cicd-srv etc/shrmpl-cicd-srv-loc.env
 
 # Trigger via webhook
 curl -X POST -H "X-Hook-Secret: my-secret" http://localhost:8080/hook/deadbeef

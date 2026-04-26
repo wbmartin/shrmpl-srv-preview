@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+
+CONFIG_FILE=/Users/brandon/Code/shrmpl-srv-preview/etc/shrmpl-pulsecheck-srv-loc.env
+
+echo "Building shrmpl-pulsecheck-srv for development (macOS)..."
+
+cargo build --bin shrmpl-pulsecheck-srv
+
+echo "Launching shrmpl-pulsecheck-srv with config $CONFIG_FILE..."
+
+./target/debug/shrmpl-pulsecheck-srv $CONFIG_FILE
